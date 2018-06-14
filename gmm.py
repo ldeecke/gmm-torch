@@ -22,9 +22,9 @@ class GaussianMixture(torch.nn.Module):
         args:
             n_components:   int
             n_features:     int
-            dtype:          torch.type
             mu_init:        torch.Tensor (1, k, d)
             var_init:       torch.Tensor (1, k, d)
+            eps:            float
         '''
         super(GaussianMixture, self).__init__()
 
@@ -57,7 +57,6 @@ class GaussianMixture(torch.nn.Module):
             n_iter:     int
             delta:      float
         '''
-        # assert type(x) == self.dtype, "Input x does not have required type %s" % self.dtype
         if len(x.size()) == 2:
             # (n, d) --> (n, k, d)
             x = x.unsqueeze(1).expand(x.size(0), self.n_components, x.size(1))
@@ -95,7 +94,6 @@ class GaussianMixture(torch.nn.Module):
         returns:
             y:          torch.LongTensor (n)
         '''
-        # assert type(x) == self.dtype, "Input x does not have required type %s" % self.dtype
         if len(x.size()) == 2:
             # (n, d) --> (n, k, d)
             x = x.unsqueeze(1).expand(x.size(0), self.n_components, x.size(1))
@@ -170,22 +168,9 @@ class GaussianMixture(torch.nn.Module):
         weights = self.__e_step(self.pi, self.__p_k(x, self.mu, self.var))
         pi_new, mu_new, var_new = self.__m_step(x, weights)
 
-        self.pi.data = pi_new
+        self.__update_pi(pi_new)
         self.__update_mu(mu_new)
         self.__update_var(var_new)
-
-    def __reset_mu(self):
-        # TODO: consider removal
-        self.mu.data = torch.zeros(1, self.n_components, self.n_features)
-
-    def __reset_var(self):
-        # TODO: consider removal
-        self.var.data = torch.ones(1, self.n_components, self.n_features)
-
-    def __reset_param(self):
-        # TODO: consider removal
-        self.__reset_mu()
-        self.__reset_var()
 
     def __score(self, pi, p_k):
         '''
@@ -222,3 +207,14 @@ class GaussianMixture(torch.nn.Module):
             self.var = var.unsqueeze(0)
         elif var.size() == (1, self.n_components, self.n_features):
             self.var.data = var
+
+    def __update_pi(self, pi):
+        '''
+        Updates pi to the provided value.
+        args:
+            pi:         torch.FloatTensor
+        '''
+        assert pi.size() in [(1, self.n_components, 1)], "Input pi does not have required tensor dimensions (%i, %i, %i)" % (1, self.n_components, 1)
+
+        self.pi.data = pi
+
