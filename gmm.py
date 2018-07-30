@@ -41,7 +41,7 @@ class GaussianMixture(torch.nn.Module):
             # (1, k, d)
             self.var = torch.nn.Parameter(mu_init, requires_grad=False)
         else:
-            self.mu = torch.nn.Parameter(torch.zeros(1, n_components, n_features), requires_grad=False)
+            self.mu = torch.nn.Parameter(torch.randn(1, n_components, n_features), requires_grad=False)
 
         if var_init is not None:
             assert var_init.size() == (1, n_components, n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (n_components, n_features)
@@ -54,7 +54,7 @@ class GaussianMixture(torch.nn.Module):
         self.pi = torch.nn.Parameter(torch.Tensor(1, n_components, 1), requires_grad=False).fill_(1./n_components)
 
 
-    def fit(self, x, n_iter=100, delta=1e-8):
+    def fit(self, x, n_iter=1000, delta=1e-8):
         """
         Public method that fits data to the model.
         args:
@@ -78,7 +78,7 @@ class GaussianMixture(torch.nn.Module):
             self.__em(x)
             self.score = self.__score(self.pi, self.__p_k(x, self.mu, self.var))
 
-            if (self.score == np.inf) or np.isnan(self.score):
+            if (self.score.abs() == float("Inf")) or (self.score == float("nan")):
                 # when the log-likelihood assumes inane values, reinitialize model
                 self.__init__(self.n_components, self.n_features)
 
@@ -197,7 +197,7 @@ class GaussianMixture(torch.nn.Module):
         """
 
         weights = pi * p_k
-        return torch.sum(torch.log(torch.sum(weights, 1)) + self.eps)
+        return torch.sum(torch.log(torch.sum(weights, 1) + self.eps))
 
 
     def __update_mu(self, mu):
