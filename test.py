@@ -5,10 +5,16 @@ from gmm import GaussianMixture
 import unittest
 
 
-class CpuGpuCheck(unittest.TestCase):
+class CpuCheck(unittest.TestCase):
+    """
+    Basic tests for CPU models.
+    """
 
-    def testCpu(self):
-        """Assert that torch.FloatTensor is handled correctly"""
+    def testPredictClasses(self):
+        """
+        Assert that torch.FloatTensor is handled correctly.
+        """
+
         x = torch.randn(4, 2)
         n_components = np.random.randint(1, 100)
 
@@ -19,8 +25,12 @@ class CpuGpuCheck(unittest.TestCase):
         # check that dimensionality of class memberships is (n)
         self.assertEqual(torch.Tensor(x.size(0)).size(), y.size())
 
-    def testCpuPredictions(self):
-        """Assert that torch.FloatTensor is handled correctly when returning class probabilities"""
+
+    def testPredictProbabilities(self):
+        """
+        Assert that torch.FloatTensor is handled correctly when returning class probabilities.
+        """
+
         x = torch.randn(4, 2)
         n_components = np.random.randint(1, 100)
 
@@ -31,8 +41,17 @@ class CpuGpuCheck(unittest.TestCase):
         y_p = model.predict(x, probs=True)
         self.assertEqual(torch.Tensor(x.size(0), n_components, 1).size(), y_p.size())
 
-    def testGpu(self):
-        """Assert that torch.cuda.FloatTensor is handled correctly"""
+
+class GpuCheck(unittest.TestCase):
+    """
+    Basic tests for GPU models.
+    """
+
+    def testPredictClasses(self):
+        """
+        Assert that torch.cuda.FloatTensor is handled correctly.
+        """
+
         x = torch.randn(4, 2).cuda()
         n_components = np.random.randint(1, 100)
 
@@ -43,8 +62,12 @@ class CpuGpuCheck(unittest.TestCase):
         # check that dimensionality of class memberships is (n)
         self.assertEqual(torch.Tensor(x.size(0)).size(), y.size())
 
-    def testGpuPredictions(self):
-        """Assert that torch.cuda.FloatTensor is handled correctly when returning class probabilities"""
+
+    def testPredictProbabilities(self):
+        """
+        Assert that torch.cuda.FloatTensor is handled correctly when returning class probabilities.
+        """
+
         x = torch.randn(4, 2)
         n_components = np.random.randint(1, 100)
 
