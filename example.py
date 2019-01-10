@@ -23,7 +23,7 @@ def main():
     data[n//2:] += 1
     data[n//2:] *= sqrt(2)
 
-    # a Gaussian Mixture Model is instantiated and ..
+    # Next, the Gaussian mixture is instantiated and ..
     n_components = 2
     model = GaussianMixture(n_components, d)
     model.fit(data)
@@ -44,19 +44,23 @@ def plot(data, y):
     # plot the locations of all data points ..
     for i, point in enumerate(data.data):
         if i <= n//2:
-            # .. separating by ground truth ..
+            # .. separating them by ground truth ..
             ax.scatter(*point, color="#000000", s=3, alpha=.75, zorder=n+i)
         else:
             ax.scatter(*point, color="#ffffff", s=3, alpha=.75, zorder=n+i)
 
         if y[i] == 0:
-            # .. as well as predicted classes
+            # .. as well as their predicted class
             ax.scatter(*point, zorder=i, color="#dbe9ff", alpha=.6, edgecolors=colors[1])
         else:
             ax.scatter(*point, zorder=i, color="#ffdbdb", alpha=.6, edgecolors=colors[5])
 
-    handels = [plt.Line2D([0], [0], color='w', lw=4, label='Ground Truth 1'), plt.Line2D([0], [0], color='black', lw=4, label='Ground Truth 2'), plt.Line2D([0], [0], color=colors[1], lw=4, label='Predicted 1'), plt.Line2D([0], [0], color=colors[5], lw=4, label='Predicted 2')]
-    legend = ax.legend(loc="best", handles=handels)
+    handles = [plt.Line2D([0], [0], color='w', lw=4, label='Ground Truth 1'),
+        plt.Line2D([0], [0], color='black', lw=4, label='Ground Truth 2'),
+        plt.Line2D([0], [0], color=colors[1], lw=4, label='Predicted 1'),
+        plt.Line2D([0], [0], color=colors[5], lw=4, label='Predicted 2')]
+
+    legend = ax.legend(loc="best", handles=handles)
 
     plt.tight_layout()
     plt.savefig("example.pdf")
