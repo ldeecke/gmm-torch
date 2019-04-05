@@ -39,7 +39,7 @@ class GaussianMixture(torch.nn.Module):
         if mu_init is not None:
             assert mu_init.size() == (1, n_components, n_features), "Input mu_init does not have required tensor dimensions (1, %i, %i)" % (n_components, n_features)
             # (1, k, d)
-            self.var = torch.nn.Parameter(mu_init, requires_grad=False)
+            self.mu = torch.nn.Parameter(mu_init, requires_grad=False)
         else:
             self.mu = torch.nn.Parameter(torch.randn(1, n_components, n_features), requires_grad=False)
 
