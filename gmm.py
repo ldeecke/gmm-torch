@@ -34,7 +34,7 @@ class GaussianMixture(torch.nn.Module):
         self.eps = eps
         self.n_components = n_components
         self.n_features = n_features
-        self.score = -np.inf
+        self.log_likelihood = -np.inf
 
         if mu_init is not None:
             assert mu_init.size() == (1, n_components, n_features), "Input mu_init does not have required tensor dimensions (1, %i, %i)" % (n_components, n_features)
@@ -71,24 +71,24 @@ class GaussianMixture(torch.nn.Module):
 
         while (i <= n_iter) and (j >= delta):
 
-            old_score = self.score
-            old_mu = self.mu
-            old_var = self.var
+            log_likelihood_old = self.log_likelihood
+            mu_old = self.mu
+            var_old = self.var
 
             self.__em(x)
-            self.score = self.__score(self.pi, self.__p_k(x, self.mu, self.var))
+            self.log_likelihood = self.__score(self.pi, self.__p_k(x, self.mu, self.var))
 
-            if (self.score.abs() == float("Inf")) or (self.score == float("nan")):
+            if (self.log_likelihood.abs() == float("Inf")) or (self.log_likelihood == float("nan")):
                 # when the log-likelihood assumes inane values, reinitialize model
                 self.__init__(self.n_components, self.n_features)
 
             i += 1
-            j = self.score - old_score
+            j = self.log_likelihood - log_likelihood_old
 
             if j <= delta:
                 # when the score decreases, revert to old parameters
-                self.__update_mu(old_mu)
-                self.__update_var(old_var)
+                self.__update_mu(mu_old)
+                self.__update_var(var_old)
 
 
     def predict(self, x, probs=False):
@@ -111,6 +111,22 @@ class GaussianMixture(torch.nn.Module):
         else:
             _, predictions = torch.max(p_k, 1)
             return torch.squeeze(predictions).type(torch.LongTensor)
+
+
+    def score(self, x):
+        """
+        Computes log-likelihood of data (x) under the current model.
+        args:
+            x:          torch.Tensor (n, d) or (n, k, d)
+        returns:
+            score:      torch.LongTensor (n)
+        """
+        if len(x.size()) == 2:
+            # (n, d) --> (n, k, d)
+            x = x.unsqueeze(1).expand(x.size(0), self.n_components, x.size(1))
+
+        score = self.__score(self.pi, self.__p_k(x, self.mu, self.var), sum_data=False)
+        return score
 
 
     def __p_k(self, x, mu, var):
@@ -188,7 +204,7 @@ class GaussianMixture(torch.nn.Module):
         self.__update_var(var_new)
 
 
-    def __score(self, pi, p_k):
+    def __score(self, pi, p_k, sum_data=True):
         """
         Computes the log-likelihood of the data under the model.
         args:
@@ -197,7 +213,10 @@ class GaussianMixture(torch.nn.Module):
         """
 
         weights = pi * p_k
-        return torch.sum(torch.log(torch.sum(weights, 1) + self.eps))
+        if sum_data:
+            return torch.sum(torch.log(torch.sum(weights, 1) + self.eps))
+        else:
+            return torch.log(torch.sum(weights, 1) + self.eps)
 
 
     def __update_mu(self, mu):
