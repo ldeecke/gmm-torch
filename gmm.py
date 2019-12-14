@@ -36,22 +36,8 @@ class GaussianMixture(torch.nn.Module):
         self.n_features = n_features
         self.log_likelihood = -np.inf
 
-        if mu_init is not None:
-            assert mu_init.size() == (1, n_components, n_features), "Input mu_init does not have required tensor dimensions (1, %i, %i)" % (n_components, n_features)
-            # (1, k, d)
-            self.mu = torch.nn.Parameter(mu_init, requires_grad=False)
-        else:
-            self.mu = torch.nn.Parameter(torch.randn(1, n_components, n_features), requires_grad=False)
-
-        if var_init is not None:
-            assert var_init.size() == (1, n_components, n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (n_components, n_features)
-            # (1, k, d)
-            self.var = torch.nn.Parameter(var_init, requires_grad=False)
-        else:
-            self.var = torch.nn.Parameter(torch.ones(1, n_components, n_features), requires_grad=False)
-
-        # (1, k, 1)
-        self.pi = torch.nn.Parameter(torch.Tensor(1, n_components, 1), requires_grad=False).fill_(1./n_components)
+        self.mu_init = mu_init
+        self.var_init = var_init
 
 
     def fit(self, x, n_iter=1000, delta=1e-8):
@@ -61,6 +47,23 @@ class GaussianMixture(torch.nn.Module):
             n_iter:     int
             delta:      float
         """
+
+        if self.mu_init is not None:
+            assert self.mu_init.size() == (1, self.n_components, self.n_features), "Input mu_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
+            # (1, k, d)
+            self.mu = torch.nn.Parameter(self.mu_init, requires_grad=False)
+        else:
+            self.mu = torch.nn.Parameter(torch.randn(1, self.n_components, self.n_features), requires_grad=False)
+
+        if self.var_init is not None:
+            assert self.var_init.size() == (1, self.n_components, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
+            # (1, k, d)
+            self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
+        else:
+            self.var = torch.nn.Parameter(torch.ones(1, self.n_components, self.n_features), requires_grad=False)
+
+        # (1, k, 1)
+        self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(1./self.n_components)
 
         if len(x.size()) == 2:
             # (n, d) --> (n, k, d)
