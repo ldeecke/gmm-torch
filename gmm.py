@@ -39,15 +39,10 @@ class GaussianMixture(torch.nn.Module):
         self.mu_init = mu_init
         self.var_init = var_init
 
+        self._init_params()
 
-    def fit(self, x, n_iter=1000, delta=1e-8):
-        """
-        Public method that fits data to the model.
-        args:
-            n_iter:     int
-            delta:      float
-        """
 
+    def _init_params(self):
         if self.mu_init is not None:
             assert self.mu_init.size() == (1, self.n_components, self.n_features), "Input mu_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
             # (1, k, d)
@@ -64,6 +59,20 @@ class GaussianMixture(torch.nn.Module):
 
         # (1, k, 1)
         self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(1./self.n_components)
+
+        self.params_fitted = False
+
+
+    def fit(self, x, warm_start=False, delta=1e-8, n_iter=1000):
+        """
+        Public method that fits data to the model.
+        args:
+            n_iter:     int
+            delta:      float
+        """
+
+        if not warm_start and self.params_fitted:
+            self._init_params()
 
         if len(x.size()) == 2:
             # (n, d) --> (n, k, d)
@@ -93,6 +102,8 @@ class GaussianMixture(torch.nn.Module):
                 self.__update_mu(mu_old)
                 self.__update_var(var_old)
 
+        self.params_fitted = True
+
 
     def predict(self, x, probs=False):
         """
@@ -116,7 +127,7 @@ class GaussianMixture(torch.nn.Module):
             return torch.squeeze(predictions).type(torch.LongTensor)
 
 
-    def score(self, x):
+    def score_samples(self, x):
         """
         Computes log-likelihood of data (x) under the current model.
         args:
