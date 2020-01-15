@@ -125,6 +125,16 @@ class GaussianMixture(torch.nn.Module):
         else:
             _, predictions = torch.max(p_k, 1)
             return torch.squeeze(predictions).type(torch.LongTensor)
+        
+    def predict_proba(self, x):
+        """
+        Returns normalized probabilities of class membership.
+        args:
+            x:          torch.Tensor (n, d) or (n, k, d)
+        returns:
+            y:          torch.LongTensor (n)
+        """
+        return self.predict(x, probs=True)
 
 
     def score_samples(self, x):
