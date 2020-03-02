@@ -63,6 +63,25 @@ class GaussianMixture(torch.nn.Module):
         self.params_fitted = False
 
 
+    def bic(self, x):
+        """
+        Bayesian information criterion for samples x.
+        args:
+            x:      torch.Tensor (n, d) or (n, k, d)
+        returns:
+            bic:    float
+        """
+        n = x.shape[0]
+
+        if len(x.size()) == 2:
+            # (n, d) --> (n, k, d)
+            x = x.unsqueeze(1).expand(n, self.n_components, x.size(1))
+
+        bic = -2. * self.__score(self.pi, self.__p_k(x, self.mu, self.var), sum_data=True) * n + self.n_components * np.log(n)
+
+        return bic
+
+
     def fit(self, x, warm_start=False, delta=1e-8, n_iter=1000):
         """
         Public method that fits data to the model.
@@ -125,7 +144,7 @@ class GaussianMixture(torch.nn.Module):
         else:
             _, predictions = torch.max(p_k, 1)
             return torch.squeeze(predictions).type(torch.LongTensor)
-        
+
     def predict_proba(self, x):
         """
         Returns normalized probabilities of class membership.
