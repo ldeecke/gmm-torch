@@ -2,42 +2,46 @@ import torch
 import numpy as np
 
 from math import pi
+from scipy.special import logsumexp
 
 
 class GaussianMixture(torch.nn.Module):
     """
-    Fits a mixture of k=1,..,K Gaussians to the input data. Input tensors are expected to be flat with dimensions (n: number of samples, d: number of features).
-    The model then extends them to (n, k: number of components, d).
+    Fits a mixture of k=1,..,K Gaussians to the input data (K is supplied via n_components). Input tensors are expected to be flat with dimensions (n: number of samples, d: number of features).
+    The model then extends them to (n, 1, d).
     The model parametrization (mu, sigma) is stored as (1, k, d), and probabilities are shaped (n, k, 1) if they relate to an individual sample, or (1, k, 1) if they assign membership probabilities to one of the mixture components.
     """
     def __init__(self, n_components, n_features, mu_init=None, var_init=None, eps=1.e-6):
         """
-        Initializes the model and brings all tensors into their required shape. The class expects data to be fed as a flat tensor in (n, d). The class owns:
-            x:              torch.Tensor (n, k, d)
+        Initializes the model and brings all tensors into their required shape.
+        The class expects data to be fed as a flat tensor in (n, d).
+        The class owns:
+            x:              torch.Tensor (n, 1, d)
             mu:             torch.Tensor (1, k, d)
             var:            torch.Tensor (1, k, d)
             pi:             torch.Tensor (1, k, 1)
             eps:            float
             n_components:   int
             n_features:     int
-            score:          float
+            log_likelihood: float
         args:
             n_components:   int
             n_features:     int
+        options:
             mu_init:        torch.Tensor (1, k, d)
             var_init:       torch.Tensor (1, k, d)
             eps:            float
         """
-
         super(GaussianMixture, self).__init__()
 
-        self.eps = eps
         self.n_components = n_components
         self.n_features = n_features
-        self.log_likelihood = -np.inf
 
         self.mu_init = mu_init
         self.var_init = var_init
+        self.eps = eps
+
+        self.log_likelihood = -np.inf
 
         self._init_params()
 
@@ -63,39 +67,47 @@ class GaussianMixture(torch.nn.Module):
         self.params_fitted = False
 
 
+    def check_size(self, x):
+        if len(x.size()) == 2:
+            # (n, d) --> (n, 1, d)
+            x = x.unsqueeze(1)
+
+        return x
+
+
     def bic(self, x):
         """
-        Bayesian information criterion for samples x.
+        Bayesian information criterion for a batch of samples.
         args:
-            x:      torch.Tensor (n, d) or (n, k, d)
+            x:      torch.Tensor (n, d) or (n, 1, d)
         returns:
             bic:    float
         """
+        x = self.check_size(x)
         n = x.shape[0]
 
-        if len(x.size()) == 2:
-            # (n, d) --> (n, k, d)
-            x = x.unsqueeze(1).expand(n, self.n_components, x.size(1))
+        # Free parameters for covariance, means and mixture components
+        free_params = self.n_features * self.n_components + self.n_features + self.n_components - 1
 
-        bic = -2. * self.__score(self.pi, self.__p_k(x, self.mu, self.var), sum_data=True) * n + self.n_components * np.log(n)
+        bic = -2. * self.__score(x, sum_data=False).mean() * n + free_params * np.log(n)
 
         return bic
 
 
-    def fit(self, x, warm_start=False, delta=1e-8, n_iter=1000):
+    def fit(self, x, delta=1e-3, n_iter=100, warm_start=False):
         """
-        Public method that fits data to the model.
+        Fits model to the data.
         args:
-            n_iter:     int
+            x:          torch.Tensor (n, d) or (n, k, d)
+        options:
             delta:      float
+            n_iter:     int
+            warm_start: bool
         """
-
         if not warm_start and self.params_fitted:
             self._init_params()
 
-        if len(x.size()) == 2:
-            # (n, d) --> (n, k, d)
-            x = x.unsqueeze(1).expand(x.size(0), self.n_components, x.size(1))
+        x = self.check_size(x)
 
         i = 0
         j = np.inf
@@ -107,17 +119,21 @@ class GaussianMixture(torch.nn.Module):
             var_old = self.var
 
             self.__em(x)
-            self.log_likelihood = self.__score(self.pi, self.__p_k(x, self.mu, self.var))
+            self.log_likelihood = self.__score(x)
 
             if (self.log_likelihood.abs() == float("Inf")) or (self.log_likelihood == float("nan")):
-                # when the log-likelihood assumes inane values, reinitialize model
-                self.__init__(self.n_components, self.n_features)
+                # When the log-likelihood assumes inane values, reinitialize model
+                self.__init__(self.n_components,
+                    self.n_features,
+                    mu_init=self.mu_init,
+                    var_init=self.var_init,
+                    eps=self.eps)
 
             i += 1
             j = self.log_likelihood - log_likelihood_old
 
             if j <= delta:
-                # when the score decreases, revert to old parameters
+                # When score decreases, revert to old parameters
                 self.__update_mu(mu_old)
                 self.__update_var(var_old)
 
@@ -126,30 +142,32 @@ class GaussianMixture(torch.nn.Module):
 
     def predict(self, x, probs=False):
         """
-        Assigns input data to one of the mixture components by evaluating the likelihood under each. If probs=True returns normalized probabilities of class membership instead.
+        Assigns input data to one of the mixture components by evaluating the likelihood under each.
+        If probs=True returns normalized probabilities of class membership.
         args:
-            x:          torch.Tensor (n, d) or (n, k, d)
+            x:          torch.Tensor (n, d) or (n, 1, d)
             probs:      bool
         returns:
+            p_k:        torch.Tensor (n, k)
+            (or)
             y:          torch.LongTensor (n)
         """
+        x = self.check_size(x)
 
-        if len(x.size()) == 2:
-            # (n, d) --> (n, k, d)
-            x = x.unsqueeze(1).expand(x.size(0), self.n_components, x.size(1))
+        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
 
-        p_k = self.__p_k(x, self.mu, self.var)
         if probs:
-            return p_k / (p_k.sum(1, keepdim=True) + self.eps)
+            p_k = torch.exp(weighted_log_prob)
+            return torch.squeeze(p_k / (p_k.sum(1, keepdim=True)))
         else:
-            _, predictions = torch.max(p_k, 1)
-            return torch.squeeze(predictions).type(torch.LongTensor)
+            return torch.squeeze(torch.max(weighted_log_prob, 1)[1].type(torch.LongTensor))
+
 
     def predict_proba(self, x):
         """
         Returns normalized probabilities of class membership.
         args:
-            x:          torch.Tensor (n, d) or (n, k, d)
+            x:          torch.Tensor (n, d) or (n, 1, d)
         returns:
             y:          torch.LongTensor (n)
         """
@@ -158,108 +176,119 @@ class GaussianMixture(torch.nn.Module):
 
     def score_samples(self, x):
         """
-        Computes log-likelihood of data (x) under the current model.
+        Computes log-likelihood of samples under the current model.
         args:
-            x:          torch.Tensor (n, d) or (n, k, d)
+            x:          torch.Tensor (n, d) or (n, 1, d)
         returns:
             score:      torch.LongTensor (n)
         """
-        if len(x.size()) == 2:
-            # (n, d) --> (n, k, d)
-            x = x.unsqueeze(1).expand(x.size(0), self.n_components, x.size(1))
+        x = self.check_size(x)
 
-        score = self.__score(self.pi, self.__p_k(x, self.mu, self.var), sum_data=False)
+        score = self.__score(x, sum_data=False)
         return score
 
 
-    def __p_k(self, x, mu, var):
+    def _estimate_log_prob(self, x):
         """
-        Returns a tensor with dimensions (n, k, 1) indicating the likelihood of data belonging to the k-th Gaussian.
+        Returns a tensor with dimensions (n, k, 1), which indicates the log-likelihood that samples belong to the k-th Gaussian.
         args:
-            x:      torch.Tensor (n, k, d)
-            mu:     torch.Tensor (1, k, d)
-            var:    torch.Tensor (1, k, d)
+            x:            torch.Tensor (n, d) or (n, 1, d)
         returns:
-            p_k:    torch.Tensor (n, k, 1)
+            log_prob:     torch.Tensor (n, k, 1)
         """
+        x = self.check_size(x)
 
-        # (1, k, d) --> (n, k, d)
-        mu = mu.expand(x.size(0), self.n_components, self.n_features)
-        var = var.expand(x.size(0), self.n_components, self.n_features)
+        mu = self.mu
+        prec = torch.rsqrt(self.var)
 
-        # (n, k, d) --> (n, k, 1)
-        exponent = torch.exp(-.5 * torch.sum((x - mu) * (x - mu) / var, 2, keepdim=True))
-        # (n, k, d) --> (n, k, 1)
-        prefactor = torch.rsqrt(((2. * pi) ** self.n_features) * torch.prod(var, dim=2, keepdim=True) + self.eps)
+        log_p = torch.sum((mu * mu + x * x - 2 * x * mu) * (prec ** 2), dim=2, keepdim=True)
+        log_det = torch.sum(torch.log(prec), dim=2, keepdim=True)
 
-        return prefactor * exponent
+        return -.5 * (self.n_features * np.log(2. * pi) + log_p) + log_det
 
 
-    def __e_step(self, pi, p_k):
+    def _e_step(self, x):
         """
-        Computes weights that indicate the probabilistic belief that a data point was generated by one of the k mixture components. This is the so-called expectation step of the EM-algorithm.
+        Computes log-responses that indicate the (logarithmic) posterior belief (sometimes called responsibilities) that a data point was generated by one of the k mixture components.
+        Also returns the mean of the mean of the logarithms of the probabilities (as is done in sklearn).
+        This is the so-called expectation step of the EM-algorithm.
         args:
+            x:              torch.Tensor (n,d) or (n, 1, d)
+        returns:
+            log_prob_norm:  torch.Tensor (1)
+            log_resp:       torch.Tensor (n, k, 1)
+        """
+        x = self.check_size(x)
+
+        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
+
+        log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
+        log_resp = weighted_log_prob - log_prob_norm
+
+        return torch.mean(log_prob_norm), log_resp
+
+
+    def _m_step(self, x, log_resp):
+        """
+        From the log-probabilities, computes new parameters pi, mu, var (that maximize the log-likelihood). This is the maximization step of the EM-algorithm.
+        args:
+            x:          torch.Tensor (n, d) or (n, 1, d)
+            log_resp:   torch.Tensor (n, k, 1)
+        returns:
             pi:         torch.Tensor (1, k, 1)
-            p_k:        torch.Tensor (n, k, 1)
-        returns:
-            weights:    torch.Tensor (n, k, 1)
+            mu:         torch.Tensor (1, k, d)
+            var:        torch.Tensor (1, k, d)
         """
+        x = self.check_size(x)
 
-        weights = pi * p_k
-        return torch.div(weights, torch.sum(weights, 1, keepdim=True) + self.eps)
+        resp = torch.exp(log_resp)
 
+        pi = torch.sum(resp, dim=0, keepdim=True) + self.eps
+        mu = torch.sum(resp * x, dim=0, keepdim=True) / pi
 
-    def __m_step(self, x, weights):
-        """
-        Updates the model's parameters. This is the maximization step of the EM-algorithm.
-        args:
-            x:          torch.Tensor (n, k, d)
-            weights:    torch.Tensor (n, k, 1)
-        returns:
-            pi_new:     torch.Tensor (1, k, 1)
-            mu_new:     torch.Tensor (1, k, d)
-            var_new:    torch.Tensor (1, k, d)
-        """
+        x2 = (resp * x * x).sum(0, keepdim=True) / pi
+        mu2 = mu * mu
+        xmu = (resp * mu * x).sum(0, keepdim=True) / pi
+        var = x2 - 2 * xmu + mu2 + self.eps
 
-        # (n, k, 1) --> (1, k, 1)
-        n_k = torch.sum(weights, 0, keepdim=True)
-        pi_new = torch.div(n_k, torch.sum(n_k, 1, keepdim=True) + self.eps)
-        # (n, k, d) --> (1, k, d)
-        mu_new = torch.div(torch.sum(weights * x, 0, keepdim=True), n_k + self.eps)
-        # (n, k, d) --> (1, k, d)
-        var_new = torch.div(torch.sum(weights * (x - mu_new) * (x - mu_new), 0, keepdim=True), n_k + self.eps)
+        pi = pi / x.shape[0]
 
-        return pi_new, mu_new, var_new
+        return pi, mu, var
 
 
     def __em(self, x):
         """
         Performs one iteration of the expectation-maximization algorithm by calling the respective subroutines.
         args:
-            x:          torch.Tensor (n, k, d)
+            x:          torch.Tensor (n, 1, d)
         """
+        _, log_resp = self._e_step(x)
+        pi, mu, var = self._m_step(x, log_resp)
 
-        weights = self.__e_step(self.pi, self.__p_k(x, self.mu, self.var))
-        pi_new, mu_new, var_new = self.__m_step(x, weights)
-
-        self.__update_pi(pi_new)
-        self.__update_mu(mu_new)
-        self.__update_var(var_new)
+        self.__update_pi(pi)
+        self.__update_mu(mu)
+        self.__update_var(var)
 
 
-    def __score(self, pi, p_k, sum_data=True):
+    def __score(self, x, sum_data=True):
         """
         Computes the log-likelihood of the data under the model.
         args:
-            pi:         torch.Tensor (1, k, 1)
-            p_k:        torch.Tensor (n, k, 1)
-        """
+            x:                  torch.Tensor (n, 1, d)
+            sum_data:           bool
+        returns:
+            score:              torch.Tensor (1)
+            (or)
+            per_sample_score:   torch.Tensor (n)
 
-        weights = pi * p_k
+        """
+        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
+        per_sample_score = torch.logsumexp(weighted_log_prob, dim=1)
+
         if sum_data:
-            return torch.sum(torch.log(torch.sum(weights, 1) + self.eps))
+            return per_sample_score.sum()
         else:
-            return torch.log(torch.sum(weights, 1) + self.eps)
+            return torch.squeeze(per_sample_score)
 
 
     def __update_mu(self, mu):
