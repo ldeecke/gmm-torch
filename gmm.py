@@ -11,7 +11,7 @@ class GaussianMixture(torch.nn.Module):
     The model then extends them to (n, 1, d).
     The model parametrization (mu, sigma) is stored as (1, k, d), and probabilities are shaped (n, k, 1) if they relate to an individual sample, or (1, k, 1) if they assign membership probabilities to one of the mixture components.
     """
-    def __init__(self, n_components, n_features, mu_init=None, var_init=None, eps=1.e-6):
+    def __init__(self, n_components, n_features, covariance_type="full", mu_init=None, var_init=None, eps=1.e-6):
         """
         Initializes the model and brings all tensors into their required shape.
         The class expects data to be fed as a flat tensor in (n, d).
@@ -43,6 +43,9 @@ class GaussianMixture(torch.nn.Module):
 
         self.log_likelihood = -np.inf
 
+        self.covariance_type = covariance_type
+        assert self.covariance_type in ["full",'diag']
+
         self._init_params()
 
 
@@ -54,12 +57,22 @@ class GaussianMixture(torch.nn.Module):
         else:
             self.mu = torch.nn.Parameter(torch.randn(1, self.n_components, self.n_features), requires_grad=False)
 
-        if self.var_init is not None:
-            assert self.var_init.size() == (1, self.n_components, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
-            # (1, k, d)
-            self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
-        else:
-            self.var = torch.nn.Parameter(torch.ones(1, self.n_components, self.n_features), requires_grad=False)
+        if self.covariance_type == "diag":
+            if self.var_init is not None:
+                assert self.var_init.size() == (1, self.n_components, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
+                # (1, k, d)
+                self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
+            else:
+                self.var = torch.nn.Parameter(torch.ones(1, self.n_components, self.n_features), requires_grad=False)
+        elif self.covariance_type == "full":
+            if self.var_init is not None:
+                assert self.var_init.size() == (1, self.n_components, self.n_features, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
+                # (1, k, d, d)
+                self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
+            else:
+                self.var = torch.nn.Parameter(
+                    torch.eye(self.n_features).reshape(1, 1, self.n_features, self.n_features).repeat(1,self.n_components,1, 1),
+                    requires_grad=False)
 
         # (1, k, 1)
         self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(1./self.n_components)
@@ -198,13 +211,24 @@ class GaussianMixture(torch.nn.Module):
         """
         x = self.check_size(x)
 
-        mu = self.mu
-        prec = torch.rsqrt(self.var)
+        if self.covariance_type == "full":
+            mu = self.mu
+            var = self.var
+            inverse_var = torch.inverse(var)
+            d = x.shape[-1]
+            log_p = -.5 * (d * np.log(2. * pi) + torch.log(torch.det(var).squeeze()).unsqueeze(-1) + \
+                           ((x - mu).unsqueeze(-2).matmul(inverse_var).matmul((x - mu).unsqueeze(-1))).squeeze(-1))
 
-        log_p = torch.sum((mu * mu + x * x - 2 * x * mu) * (prec ** 2), dim=2, keepdim=True)
-        log_det = torch.sum(torch.log(prec), dim=2, keepdim=True)
+            return log_p
 
-        return -.5 * (self.n_features * np.log(2. * pi) + log_p) + log_det
+        elif self.covariance_type == "diag":
+            mu = self.mu
+            prec = torch.rsqrt(self.var)
+
+            log_p = torch.sum((mu * mu + x * x - 2 * x * mu) * (prec ** 2), dim=2, keepdim=True)
+            log_det = torch.sum(torch.log(prec), dim=2, keepdim=True)
+
+            return -.5 * (self.n_features * np.log(2. * pi) + log_p) + log_det
 
 
     def _e_step(self, x):
@@ -246,10 +270,15 @@ class GaussianMixture(torch.nn.Module):
         pi = torch.sum(resp, dim=0, keepdim=True) + self.eps
         mu = torch.sum(resp * x, dim=0, keepdim=True) / pi
 
-        x2 = (resp * x * x).sum(0, keepdim=True) / pi
-        mu2 = mu * mu
-        xmu = (resp * mu * x).sum(0, keepdim=True) / pi
-        var = x2 - 2 * xmu + mu2 + self.eps
+        if self.covariance_type == "full":
+            eps = (torch.eye(self.n_features) * self.eps).to(x.device)
+            var = torch.sum((x - mu).unsqueeze(-1).matmul((x - mu).unsqueeze(-2)) * resp.unsqueeze(-1), dim=0,
+                            keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) #+ eps
+        elif self.covariance_type == "diag":
+            x2 = (resp * x * x).sum(0, keepdim=True) / pi
+            mu2 = mu * mu
+            xmu = (resp * mu * x).sum(0, keepdim=True) / pi
+            var = x2 - 2 * xmu + mu2 + self.eps
 
         pi = pi / x.shape[0]
 
@@ -313,12 +342,22 @@ class GaussianMixture(torch.nn.Module):
             var:        torch.FloatTensor
         """
 
-        assert var.size() in [(self.n_components, self.n_features), (1, self.n_components, self.n_features)], "Input var does not have required tensor dimensions (%i, %i) or (1, %i, %i)" % (self.n_components, self.n_features, self.n_components, self.n_features)
 
-        if var.size() == (self.n_components, self.n_features):
-            self.var = var.unsqueeze(0)
-        elif var.size() == (1, self.n_components, self.n_features):
-            self.var.data = var
+        if self.covariance_type == "full":
+            assert var.size() in [(self.n_components, self.n_features, self.n_features), (1, self.n_components, self.n_features, self.n_features)], "Input var does not have required tensor dimensions (%i, %i, %i) or (1, %i, %i, %i)" % (self.n_components, self.n_features, self.n_features, self.n_components, self.n_features, self.n_features)
+
+            if var.size() == (self.n_components, self.n_features, self.n_features):
+                self.var = var.unsqueeze(0)
+            elif var.size() == (1, self.n_components, self.n_features, self.n_features):
+                self.var.data = var
+
+        elif self.covariance_type == "diag":
+            assert var.size() in [(self.n_components, self.n_features), (1, self.n_components, self.n_features)], "Input var does not have required tensor dimensions (%i, %i) or (1, %i, %i)" % (self.n_components, self.n_features, self.n_components, self.n_features)
+
+            if var.size() == (self.n_components, self.n_features):
+                self.var = var.unsqueeze(0)
+            elif var.size() == (1, self.n_components, self.n_features):
+                self.var.data = var
 
 
     def __update_pi(self, pi):
@@ -331,3 +370,56 @@ class GaussianMixture(torch.nn.Module):
         assert pi.size() in [(1, self.n_components, 1)], "Input pi does not have required tensor dimensions (%i, %i, %i)" % (1, self.n_components, 1)
 
         self.pi.data = pi
+
+def get_kmeans_mu(X, K, min_delta=1e-3):
+    """
+    input:
+    x:              torch.Tensor (n, d)
+    output:
+    center:         torch.Tensor (1, k, d)
+    """
+    center = X[np.random.randint(0, X.shape[0], size=K),...]
+    delta = np.inf
+    while delta > min_delta:
+        l2_dis = torch.norm((X.unsqueeze(1).repeat(1,K,1)-center),dim=2)
+        l2_cls = torch.argmin(l2_dis, dim=1)
+        center_old = center.clone()
+        for c in range(K):
+            center[c] = X[l2_cls==c].mean(dim=0)
+        delta = torch.norm((center_old-center),dim=1).max()
+    return center.unsqueeze(0)
+
+if __name__=="__main__":
+    from math import sqrt
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+
+    n = 3000
+    n1 = 1000
+    K = 4
+
+    from sklearn.datasets import make_moons
+    data, label = make_moons(n_samples=n, shuffle=True, noise=0.03, random_state=None)
+    fig = plt.figure(facecolor='white')
+    ax = fig.add_subplot(1, 3, 1, projection='3d', facecolor='white')
+    ax.scatter(data[:n1, 0], data[:n1, 1], c=label[:n1])
+    ax.set_title("Data")
+
+    X = torch.from_numpy(data.astype(np.float32)).cuda()
+    gmm = GaussianMixture(n_components=K, n_features=2, mu_init=get_kmeans_mu(X, K),covariance_type="full", ).cuda()
+    gmm.fit(X, n_iter=100)
+    pre_label = gmm.predict(X)
+    pre_label = pre_label.detach().cpu().numpy()
+    ax = fig.add_subplot(1, 3, 2, projection='3d', facecolor='white')
+    ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
+    ax.set_title("full covariance")
+
+    gmm = GaussianMixture(n_components=K, n_features=2, mu_init=get_kmeans_mu(X, K),covariance_type="diag", ).cuda()
+    gmm.fit(X, n_iter=100)
+    pre_label = gmm.predict(X)
+    pre_label = pre_label.detach().cpu().numpy()
+    ax = fig.add_subplot(1, 3, 3, projection='3d', facecolor='white')
+    ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
+    ax.set_title("diag covariance")
+
+    plt.show()
