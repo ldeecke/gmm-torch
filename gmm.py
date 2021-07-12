@@ -11,7 +11,7 @@ class GaussianMixture(torch.nn.Module):
     The model then extends them to (n, 1, d).
     The model parametrization (mu, sigma) is stored as (1, k, d), and probabilities are shaped (n, k, 1) if they relate to an individual sample, or (1, k, 1) if they assign membership probabilities to one of the mixture components.
     """
-    def __init__(self, n_components, n_features, covariance_type="full", mu_init=None, var_init=None, eps=1.e-6):
+    def __init__(self, n_components, n_features, covariance_type="full", init_params='kmeans', mu_init=None, var_init=None, eps=1.e-6):
         """
         Initializes the model and brings all tensors into their required shape.
         The class expects data to be fed as a flat tensor in (n, d).
@@ -46,7 +46,9 @@ class GaussianMixture(torch.nn.Module):
         self.log_likelihood = -np.inf
 
         self.covariance_type = covariance_type
+        self.init_params = init_params
         assert self.covariance_type in ["full",'diag']
+        assert self.init_params in ["kmeans", 'random']
 
         self._init_params()
 
@@ -124,6 +126,9 @@ class GaussianMixture(torch.nn.Module):
 
         x = self.check_size(x)
 
+        if self.init_params == "kmeans":
+            self.mu.data = self.get_kmeans_mu(x, n_centers=self.n_components)
+
         i = 0
         j = np.inf
 
@@ -141,10 +146,10 @@ class GaussianMixture(torch.nn.Module):
                 # When the log-likelihood assumes inane values, reinitialize model
                 self.__init__(self.n_components,
                     self.n_features,
+                    covariance_type=self.covariance_type,
                     mu_init=self.mu_init,
                     var_init=self.var_init,
                     eps=self.eps)
-                print("reset")
                 for p in self.parameters():
                     p.data = p.data.to(device)
 
@@ -246,7 +251,7 @@ class GaussianMixture(torch.nn.Module):
             log_2pi = d * np.log(2. * pi)
             log_det = torch.log(torch.det(var).squeeze()).unsqueeze(-1)
 
-            # 实验性操作,防止下溢
+            # Experimental operation to prevent overflow
             log_det[log_det==-np.inf] = self.lower_bound_logdet
 
             x_mu_T = (x - mu).unsqueeze(-2)
@@ -414,25 +419,27 @@ class GaussianMixture(torch.nn.Module):
 
         self.pi.data = pi
 
-def get_kmeans_mu(X, K, min_delta=1e-3):
-    """
-    input:
-    x:              torch.Tensor (n, d)
-    output:
-    center:         torch.Tensor (1, k, d)
-    """
-    min,max = X.min(), X.max()
-    X = (X-min) / (max - min)
-    center = X[np.random.randint(0, X.shape[0], size=K), ...]
-    delta = np.inf
-    while delta > min_delta:
-        l2_dis = torch.norm((X.unsqueeze(1).repeat(1,K,1)-center),p=2,dim=2)
-        l2_cls = torch.argmin(l2_dis, dim=1)
-        center_old = center.clone()
-        for c in range(K):
-            center[c] = X[l2_cls==c].mean(dim=0)
-        delta = torch.norm((center_old-center),dim=1).max()
-    return (center.unsqueeze(0)*(max-min)+min)
+    @staticmethod
+    def get_kmeans_mu(X, n_centers, min_delta=1e-3):
+        """
+        input:
+        x:              torch.Tensor (n, d),(n, 1, d)
+        output:
+        center:         torch.Tensor (1, k, d)
+        """
+        X = X.squeeze(1)
+        min, max = X.min(), X.max()
+        X = (X-min) / (max - min)
+        center = X[np.random.randint(0, X.shape[0], size=n_centers), ...]
+        delta = np.inf
+        while delta > min_delta:
+            l2_dis = torch.norm((X.unsqueeze(1).repeat(1,n_centers,1)-center),p=2,dim=2)
+            l2_cls = torch.argmin(l2_dis, dim=1)
+            center_old = center.clone()
+            for c in range(K):
+                center[c] = X[l2_cls==c].mean(dim=0)
+            delta = torch.norm((center_old-center),dim=1).max()
+        return (center.unsqueeze(0)*(max-min)+min)
 
 if __name__=="__main__":
     from math import sqrt
@@ -451,7 +458,7 @@ if __name__=="__main__":
     ax.set_title("Data")
 
     X = torch.from_numpy(data.astype(np.float32)).cuda()
-    gmm = GaussianMixture(n_components=K, n_features=2, mu_init=get_kmeans_mu(X, K),covariance_type="full", ).cuda()
+    gmm = GaussianMixture(n_components=K, n_features=2, covariance_type="full", ).cuda()
     gmm.fit(X, n_iter=100)
     pre_label = gmm.predict(X)
     pre_label = pre_label.detach().cpu().numpy()
@@ -459,7 +466,7 @@ if __name__=="__main__":
     ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
     ax.set_title("full covariance")
 
-    gmm = GaussianMixture(n_components=K, n_features=2, mu_init=get_kmeans_mu(X, K),covariance_type="diag", ).cuda()
+    gmm = GaussianMixture(n_components=K, n_features=2, covariance_type="diag", ).cuda()
     gmm.fit(X, n_iter=100)
     pre_label = gmm.predict(X)
     pre_label = pre_label.detach().cpu().numpy()
