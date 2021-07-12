@@ -4,7 +4,6 @@ import numpy as np
 from math import pi
 from scipy.special import logsumexp
 
-
 class GaussianMixture(torch.nn.Module):
     """
     Fits a mixture of k=1,..,K Gaussians to the input data (K is supplied via n_components). Input tensors are expected to be flat with dimensions (n: number of samples, d: number of features).
@@ -41,8 +40,6 @@ class GaussianMixture(torch.nn.Module):
         self.var_init = var_init
         self.eps = eps
 
-        self.lower_bound_logdet = -783. # lower bound of log_det
-
         self.log_likelihood = -np.inf
 
         self.covariance_type = covariance_type
@@ -72,10 +69,10 @@ class GaussianMixture(torch.nn.Module):
             if self.var_init is not None:
                 assert self.var_init.size() == (1, self.n_components, self.n_features, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
                 # (1, k, d, d)
-                self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
+                self.var = torch.nn.Parameter(self.var_init, requires_grad=False,)
             else:
                 self.var = torch.nn.Parameter(
-                    torch.eye(self.n_features).reshape(1, 1, self.n_features, self.n_features).repeat(1,self.n_components,1, 1),
+                    torch.eye(self.n_features,dtype=torch.float64).reshape(1, 1, self.n_features, self.n_features).repeat(1,self.n_components,1, 1),
                     requires_grad=False)
 
         # (1, k, 1)
@@ -127,7 +124,8 @@ class GaussianMixture(torch.nn.Module):
         x = self.check_size(x)
 
         if self.init_params == "kmeans":
-            self.mu.data = self.get_kmeans_mu(x, n_centers=self.n_components)
+            mu = self.get_kmeans_mu(x, n_centers=self.n_components)
+            self.mu.data = mu
 
         i = 0
         j = np.inf
@@ -152,6 +150,8 @@ class GaussianMixture(torch.nn.Module):
                     eps=self.eps)
                 for p in self.parameters():
                     p.data = p.data.to(device)
+                if self.init_params == "kmeans":
+                    self.mu.data, = self.get_kmeans_mu(x, n_centers=self.n_components)
 
             i += 1
             j = self.log_likelihood - log_likelihood_old
@@ -211,18 +211,20 @@ class GaussianMixture(torch.nn.Module):
         score = self.__score(x, sum_data=False)
         return score
 
+
     def _cal_mutmal_x_cov(self, mat_a, mat_b):
         """
         cal x mutmal covriance without use mutmal to reduce memory
         mat_a:torch.Tensor (n,k,1,d)
         mat_b:torch.Tensor (1,k,d,d)
         """
-        res = torch.zeros(mat_a.shape).to(mat_a.device)
+        res = torch.zeros(mat_a.shape).double().to(mat_a.device)
         for i in range(self.n_components):
             mat_a_i = mat_a[:,i,:,:].squeeze()
             mat_b_i = mat_b[0,i,:,:].squeeze()
             res[:,i,:,:] = mat_a_i.mm(mat_b_i).unsqueeze(1)
         return res
+
 
     def _cal_mutmal_x_x(self, mat_a, mat_b):
         """
@@ -231,6 +233,19 @@ class GaussianMixture(torch.nn.Module):
         mat_b:torch.Tensor (n,k,d,1)
         """
         return torch.sum(mat_a.squeeze()*mat_b.squeeze(),dim=2,keepdim=True)
+
+
+    def _cal_log_det(self, var):
+        """
+        cal log_det in log space, which can prevent overflow
+        var: torch.Tensor (1,k,d,)
+        """
+        log_det = torch.empty(size=(self.n_components,)).to(var.device)
+        for k in range(self.n_components):
+            evals, evecs = torch.linalg.eig(var[0,k])
+            log_det[k] = torch.log(evals.real).sum()
+        return log_det.unsqueeze(-1)
+
 
     def _estimate_log_prob(self, x):
         """
@@ -249,11 +264,12 @@ class GaussianMixture(torch.nn.Module):
             d = x.shape[-1]
 
             log_2pi = d * np.log(2. * pi)
-            log_det = torch.log(torch.det(var).squeeze()).unsqueeze(-1)
 
-            # Experimental operation to prevent overflow
-            log_det[log_det==-np.inf] = self.lower_bound_logdet
+            # cal log_det in log space instead
+            log_det = self._cal_log_det(var)
 
+            x = x.double() 
+            mu = mu.double()
             x_mu_T = (x - mu).unsqueeze(-2)
             x_mu = (x - mu).unsqueeze(-1)
 
@@ -390,7 +406,6 @@ class GaussianMixture(torch.nn.Module):
             var:        torch.FloatTensor
         """
 
-
         if self.covariance_type == "full":
             assert var.size() in [(self.n_components, self.n_features, self.n_features), (1, self.n_components, self.n_features, self.n_features)], "Input var does not have required tensor dimensions (%i, %i, %i) or (1, %i, %i, %i)" % (self.n_components, self.n_features, self.n_features, self.n_components, self.n_features, self.n_features)
 
@@ -430,30 +445,30 @@ class GaussianMixture(torch.nn.Module):
         X = X.squeeze(1)
         min, max = X.min(), X.max()
         X = (X-min) / (max - min)
-        center = X[np.random.randint(0, X.shape[0], size=n_centers), ...]
+        center = X[np.random.choice(np.arange(X.shape[0]), size=4, replace=False), ...]
         delta = np.inf
         while delta > min_delta:
             l2_dis = torch.norm((X.unsqueeze(1).repeat(1,n_centers,1)-center),p=2,dim=2)
             l2_cls = torch.argmin(l2_dis, dim=1)
             center_old = center.clone()
-            for c in range(K):
+            for c in range(n_centers):
                 center[c] = X[l2_cls==c].mean(dim=0)
             delta = torch.norm((center_old-center),dim=1).max()
+
         return (center.unsqueeze(0)*(max-min)+min)
 
 if __name__=="__main__":
     from math import sqrt
     import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
 
-    n = 3000
+    n = 5000
     n1 = 1000
     K = 4
 
-    from sklearn.datasets import make_moons
-    data, label = make_moons(n_samples=n, shuffle=True, noise=0.03, random_state=None)
+    from sklearn.datasets import make_moons,make_blobs
+    data, label = make_moons(n_samples=n, shuffle=True, noise=0.03, random_state=None)#make_blobs(1000,n_features=256, centers=4, cluster_std=1.0) #
     fig = plt.figure(facecolor='white')
-    ax = fig.add_subplot(1, 3, 1, projection='3d', facecolor='white')
+    ax = fig.add_subplot(2, 2, 1, projection='3d', facecolor='white')
     ax.scatter(data[:n1, 0], data[:n1, 1], c=label[:n1])
     ax.set_title("Data")
 
@@ -462,7 +477,7 @@ if __name__=="__main__":
     gmm.fit(X, n_iter=100)
     pre_label = gmm.predict(X)
     pre_label = pre_label.detach().cpu().numpy()
-    ax = fig.add_subplot(1, 3, 2, projection='3d', facecolor='white')
+    ax = fig.add_subplot(2, 2, 3, projection='3d', facecolor='white')
     ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
     ax.set_title("full covariance")
 
@@ -470,7 +485,7 @@ if __name__=="__main__":
     gmm.fit(X, n_iter=100)
     pre_label = gmm.predict(X)
     pre_label = pre_label.detach().cpu().numpy()
-    ax = fig.add_subplot(1, 3, 3, projection='3d', facecolor='white')
+    ax = fig.add_subplot(2, 2, 4, projection='3d', facecolor='white')
     ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
     ax.set_title("diag covariance")
 
