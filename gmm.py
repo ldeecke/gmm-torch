@@ -18,7 +18,7 @@ class GaussianMixture(torch.nn.Module):
         The class owns:
             x:              torch.Tensor (n, 1, d)
             mu:             torch.Tensor (1, k, d)
-            var:            torch.Tensor (1, k, d)
+            var:            torch.Tensor (1, k, d) or (1, k, d, d)
             pi:             torch.Tensor (1, k, 1)
             eps:            float
             n_components:   int
@@ -29,7 +29,7 @@ class GaussianMixture(torch.nn.Module):
             n_features:     int
         options:
             mu_init:        torch.Tensor (1, k, d)
-            var_init:       torch.Tensor (1, k, d)
+            var_init:       torch.Tensor (1, k, d) or (1, k, d, d)
             eps:            float
         """
         super(GaussianMixture, self).__init__()
@@ -40,6 +40,8 @@ class GaussianMixture(torch.nn.Module):
         self.mu_init = mu_init
         self.var_init = var_init
         self.eps = eps
+
+        self.lower_bound_logdet = -783. # lower bound of log_det
 
         self.log_likelihood = -np.inf
 
@@ -134,13 +136,17 @@ class GaussianMixture(torch.nn.Module):
             self.__em(x)
             self.log_likelihood = self.__score(x)
 
-            if (self.log_likelihood.abs() == float("Inf")) or (self.log_likelihood == float("nan")):
+            if torch.isinf(self.log_likelihood.abs()) or torch.isnan(self.log_likelihood):
+                device = self.mu.device
                 # When the log-likelihood assumes inane values, reinitialize model
                 self.__init__(self.n_components,
                     self.n_features,
                     mu_init=self.mu_init,
                     var_init=self.var_init,
                     eps=self.eps)
+                print("reset")
+                for p in self.parameters():
+                    p.data = p.data.to(device)
 
             i += 1
             j = self.log_likelihood - log_likelihood_old
@@ -200,6 +206,26 @@ class GaussianMixture(torch.nn.Module):
         score = self.__score(x, sum_data=False)
         return score
 
+    def _cal_mutmal_x_cov(self, mat_a, mat_b):
+        """
+        cal x mutmal covriance without use mutmal to reduce memory
+        mat_a:torch.Tensor (n,k,1,d)
+        mat_b:torch.Tensor (1,k,d,d)
+        """
+        res = torch.zeros(mat_a.shape).to(mat_a.device)
+        for i in range(self.n_components):
+            mat_a_i = mat_a[:,i,:,:].squeeze()
+            mat_b_i = mat_b[0,i,:,:].squeeze()
+            res[:,i,:,:] = mat_a_i.mm(mat_b_i).unsqueeze(1)
+        return res
+
+    def _cal_mutmal_x_x(self, mat_a, mat_b):
+        """
+        cal x mutmal x without use mutmal to reduce memory
+        mat_a:torch.Tensor (n,k,1,d)
+        mat_b:torch.Tensor (n,k,d,1)
+        """
+        return torch.sum(mat_a.squeeze()*mat_b.squeeze(),dim=2,keepdim=True)
 
     def _estimate_log_prob(self, x):
         """
@@ -216,8 +242,25 @@ class GaussianMixture(torch.nn.Module):
             var = self.var
             inverse_var = torch.inverse(var)
             d = x.shape[-1]
-            log_p = -.5 * (d * np.log(2. * pi) + torch.log(torch.det(var).squeeze()).unsqueeze(-1) + \
-                           ((x - mu).unsqueeze(-2).matmul(inverse_var).matmul((x - mu).unsqueeze(-1))).squeeze(-1))
+
+            log_2pi = d * np.log(2. * pi)
+            log_det = torch.log(torch.det(var).squeeze()).unsqueeze(-1)
+
+            # 实验性操作,防止下溢
+            log_det[log_det==-np.inf] = self.lower_bound_logdet
+
+            x_mu_T = (x - mu).unsqueeze(-2)
+            x_mu = (x - mu).unsqueeze(-1)
+
+            # this way reduce memory overhead, but little slow
+            x_mu_T_inverse_var = self._cal_mutmal_x_cov(x_mu_T, inverse_var)
+            x_mu_T_inverse_var_x_mu = self._cal_mutmal_x_x(x_mu_T_inverse_var, x_mu)
+
+            # this way is high memory overhead
+            # x_mu_T_inverse_var = x_mu_T.matmul(inverse_var)
+            # x_mu_T_inverse_var_x_mu = x_mu_T_inverse_var.matmul(x_mu).squeeze(-1)
+
+            log_p = -.5 * (log_2pi + log_det + x_mu_T_inverse_var_x_mu)
 
             return log_p
 
@@ -273,7 +316,7 @@ class GaussianMixture(torch.nn.Module):
         if self.covariance_type == "full":
             eps = (torch.eye(self.n_features) * self.eps).to(x.device)
             var = torch.sum((x - mu).unsqueeze(-1).matmul((x - mu).unsqueeze(-2)) * resp.unsqueeze(-1), dim=0,
-                            keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) #+ eps
+                            keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) + eps
         elif self.covariance_type == "diag":
             x2 = (resp * x * x).sum(0, keepdim=True) / pi
             mu2 = mu * mu
@@ -378,16 +421,18 @@ def get_kmeans_mu(X, K, min_delta=1e-3):
     output:
     center:         torch.Tensor (1, k, d)
     """
-    center = X[np.random.randint(0, X.shape[0], size=K),...]
+    min,max = X.min(), X.max()
+    X = (X-min) / (max - min)
+    center = X[np.random.randint(0, X.shape[0], size=K), ...]
     delta = np.inf
     while delta > min_delta:
-        l2_dis = torch.norm((X.unsqueeze(1).repeat(1,K,1)-center),dim=2)
+        l2_dis = torch.norm((X.unsqueeze(1).repeat(1,K,1)-center),p=2,dim=2)
         l2_cls = torch.argmin(l2_dis, dim=1)
         center_old = center.clone()
         for c in range(K):
             center[c] = X[l2_cls==c].mean(dim=0)
         delta = torch.norm((center_old-center),dim=1).max()
-    return center.unsqueeze(0)
+    return (center.unsqueeze(0)*(max-min)+min)
 
 if __name__=="__main__":
     from math import sqrt
