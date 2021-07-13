@@ -220,7 +220,7 @@ class GaussianMixture(torch.nn.Module):
         """
         res = torch.zeros(mat_a.shape).double().to(mat_a.device)
         for i in range(self.n_components):
-            mat_a_i = mat_a[:,i,:,:].squeeze()
+            mat_a_i = mat_a[:,i,:,:].squeeze(-2)
             mat_b_i = mat_b[0,i,:,:].squeeze()
             res[:,i,:,:] = mat_a_i.mm(mat_b_i).unsqueeze(1)
         return res
@@ -232,7 +232,7 @@ class GaussianMixture(torch.nn.Module):
         mat_a:torch.Tensor (n,k,1,d)
         mat_b:torch.Tensor (n,k,d,1)
         """
-        return torch.sum(mat_a.squeeze()*mat_b.squeeze(),dim=2,keepdim=True)
+        return torch.sum(mat_a.squeeze(-2)*mat_b.squeeze(-1),dim=2,keepdim=True)
 
 
     def _cal_log_det(self, var):
