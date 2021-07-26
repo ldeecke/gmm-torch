@@ -3,6 +3,7 @@ import numpy as np
 
 from math import pi
 from scipy.special import logsumexp
+from utils import cal_mutmal_x_cov, cal_mutmal_x_x
 
 class GaussianMixture(torch.nn.Module):
     """
@@ -123,7 +124,7 @@ class GaussianMixture(torch.nn.Module):
 
         x = self.check_size(x)
 
-        if self.init_params == "kmeans":
+        if self.init_params == "kmeans" and self.mu_init is None:
             mu = self.get_kmeans_mu(x, n_centers=self.n_components)
             self.mu.data = mu
 
@@ -212,29 +213,6 @@ class GaussianMixture(torch.nn.Module):
         return score
 
 
-    def _cal_mutmal_x_cov(self, mat_a, mat_b):
-        """
-        cal x mutmal covriance without use mutmal to reduce memory
-        mat_a:torch.Tensor (n,k,1,d)
-        mat_b:torch.Tensor (1,k,d,d)
-        """
-        res = torch.zeros(mat_a.shape).double().to(mat_a.device)
-        for i in range(self.n_components):
-            mat_a_i = mat_a[:,i,:,:].squeeze(-2)
-            mat_b_i = mat_b[0,i,:,:].squeeze()
-            res[:,i,:,:] = mat_a_i.mm(mat_b_i).unsqueeze(1)
-        return res
-
-
-    def _cal_mutmal_x_x(self, mat_a, mat_b):
-        """
-        cal x mutmal x without use mutmal to reduce memory
-        mat_a:torch.Tensor (n,k,1,d)
-        mat_b:torch.Tensor (n,k,d,1)
-        """
-        return torch.sum(mat_a.squeeze(-2)*mat_b.squeeze(-1),dim=2,keepdim=True)
-
-
     def _cal_log_det(self, var):
         """
         cal log_det in log space, which can prevent overflow
@@ -274,8 +252,8 @@ class GaussianMixture(torch.nn.Module):
             x_mu = (x - mu).unsqueeze(-1)
 
             # this way reduce memory overhead, but little slow
-            x_mu_T_inverse_var = self._cal_mutmal_x_cov(x_mu_T, inverse_var)
-            x_mu_T_inverse_var_x_mu = self._cal_mutmal_x_x(x_mu_T_inverse_var, x_mu)
+            x_mu_T_inverse_var = cal_mutmal_x_cov(self.n_components, x_mu_T, inverse_var)
+            x_mu_T_inverse_var_x_mu = cal_mutmal_x_x(x_mu_T_inverse_var, x_mu)
 
             # this way is high memory overhead
             # x_mu_T_inverse_var = x_mu_T.matmul(inverse_var)
@@ -435,17 +413,31 @@ class GaussianMixture(torch.nn.Module):
         self.pi.data = pi
 
     @staticmethod
-    def get_kmeans_mu(X, n_centers, min_delta=1e-3):
+    def get_kmeans_mu(X, n_centers, min_delta=1e-3, init_times=50):
         """
         input:
         x:              torch.Tensor (n, d),(n, 1, d)
+        min_delta:      int, thresh of kmeans stop
+        init_times:     times try's to find better center
         output:
         center:         torch.Tensor (1, k, d)
         """
-        X = X.squeeze(1)
-        min, max = X.min(), X.max()
-        X = (X-min) / (max - min)
-        center = X[np.random.choice(np.arange(X.shape[0]), size=4, replace=False), ...]
+        if len(X.size()) == 3:
+            X = X.squeeze(1)
+        min_value, max_value = X.min(), X.max()
+        X = (X - min_value) / (max_value - min_value)
+        min_cost = np.inf
+        for i in range(init_times):
+            tmp_center = X[np.random.choice(np.arange(X.shape[0]), size=n_centers, replace=False), ...]
+            l2_dis = torch.norm((X.unsqueeze(1).repeat(1, n_centers, 1) - tmp_center), p=2, dim=2)
+            l2_cls = torch.argmin(l2_dis, dim=1)
+            cost = 0
+            for c in range(n_centers):
+                cost += torch.norm(X[l2_cls==c] - tmp_center[c],p=2,dim=1).mean()
+            if cost < min_cost:
+                min_cost = cost
+                center = tmp_center
+
         delta = np.inf
         while delta > min_delta:
             l2_dis = torch.norm((X.unsqueeze(1).repeat(1,n_centers,1)-center),p=2,dim=2)
@@ -455,7 +447,7 @@ class GaussianMixture(torch.nn.Module):
                 center[c] = X[l2_cls==c].mean(dim=0)
             delta = torch.norm((center_old-center),dim=1).max()
 
-        return (center.unsqueeze(0)*(max-min)+min)
+        return (center.unsqueeze(0)*(max_value-min_value)+min_value)
 
 if __name__=="__main__":
     from math import sqrt
@@ -464,29 +456,46 @@ if __name__=="__main__":
     n = 5000
     n1 = 1000
     K = 4
+    np.random.seed(11)
+    torch.cuda.manual_seed(11)
+    torch.manual_seed(11)
 
-    from sklearn.datasets import make_moons,make_blobs
-    data, label = make_moons(n_samples=n, shuffle=True, noise=0.03, random_state=None)#make_blobs(1000,n_features=256, centers=4, cluster_std=1.0) #
+
+    from sklearn.datasets import make_moons, make_blobs
+    data, label = make_blobs(1000,n_features=256, centers=4, cluster_std=1.0) #make_moons(n_samples=n, shuffle=True, noise=0.03, random_state=None) #
     fig = plt.figure(facecolor='white')
     ax = fig.add_subplot(2, 2, 1, projection='3d', facecolor='white')
-    ax.scatter(data[:n1, 0], data[:n1, 1], c=label[:n1])
+    ax.scatter(data[:n1, 0], data[:n1, 1], data[:n1, 2], c=label[:n1])
     ax.set_title("Data")
 
+
     X = torch.from_numpy(data.astype(np.float32)).cuda()
-    gmm = GaussianMixture(n_components=K, n_features=2, covariance_type="full", ).cuda()
+    centers = GaussianMixture.get_kmeans_mu(X ,4)
+    gmm = GaussianMixture(n_components=K, n_features=256, covariance_type="full", mu_init=centers).cuda()
     gmm.fit(X, n_iter=100)
+    print("gmm torch full score ", gmm.score_samples(X).mean().item())
+    pre_label = gmm.predict(X)
+    pre_label = pre_label.detach().cpu().numpy()
+    ax = fig.add_subplot(2, 2, 2, projection='3d', facecolor='white')
+    ax.scatter(data[:n1, 0], data[:n1, 1], data[:n1, 2], c=pre_label[:n1])
+    ax.set_title("full covariance")
+
+    gmm = GaussianMixture(n_components=K, n_features=256, covariance_type="diag", mu_init=centers).cuda()
+    gmm.fit(X, n_iter=100)
+    print("gmm torch diag score",gmm.score_samples(X).mean().item())
     pre_label = gmm.predict(X)
     pre_label = pre_label.detach().cpu().numpy()
     ax = fig.add_subplot(2, 2, 3, projection='3d', facecolor='white')
-    ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
-    ax.set_title("full covariance")
-
-    gmm = GaussianMixture(n_components=K, n_features=2, covariance_type="diag", ).cuda()
-    gmm.fit(X, n_iter=100)
-    pre_label = gmm.predict(X)
-    pre_label = pre_label.detach().cpu().numpy()
-    ax = fig.add_subplot(2, 2, 4, projection='3d', facecolor='white')
-    ax.scatter(data[:n1, 0], data[:n1, 1], c=pre_label[:n1])
+    ax.scatter(data[:n1, 0], data[:n1, 1], data[:n1, 2], c=pre_label[:n1])
     ax.set_title("diag covariance")
+
+    from sklearn.mixture import GaussianMixture
+    gmm = GaussianMixture(n_components=K, means_init=centers.cpu().numpy().squeeze())
+    gmm.fit(X.cpu().numpy())
+    print("gmm sklearn full score ", gmm.score(X.cpu().numpy()))
+    pre_label = gmm.predict(X.cpu().numpy())
+    ax = fig.add_subplot(2, 2, 4, projection='3d', facecolor='white')
+    ax.scatter(data[:n1, 0], data[:n1, 1], data[:n1, 2], c=pre_label[:n1])
+    ax.set_title("sklearn full covariance")
 
     plt.show()
