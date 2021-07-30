@@ -68,7 +68,7 @@ class GaussianMixture(torch.nn.Module):
                 self.var = torch.nn.Parameter(torch.ones(1, self.n_components, self.n_features), requires_grad=False)
         elif self.covariance_type == "full":
             if self.var_init is not None:
-                assert self.var_init.size() == (1, self.n_components, self.n_features, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
+                assert self.var_init.size() == (1, self.n_components, self.n_features, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i, %i)" % (self.n_components, self.n_features, self.n_features)
                 # (1, k, d, d)
                 self.var = torch.nn.Parameter(self.var_init, requires_grad=False,)
             else:
@@ -411,6 +411,7 @@ class GaussianMixture(torch.nn.Module):
 
 
     def get_kmeans_mu(self, X, n_centers, min_delta=1e-3, init_times=50):
+
         """
         input:
         x:              torch.Tensor (n, d),(n, 1, d)
