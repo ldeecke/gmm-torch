@@ -6,9 +6,6 @@ from gmm import GaussianMixture
 
 import unittest
 
-# np.random.seed(11)
-# torch.cuda.manual_seed(11)
-# torch.manual_seed(11)
 
 class CpuCheck(unittest.TestCase):
     """
