@@ -113,7 +113,7 @@ class GaussianMixture(torch.nn.Module):
         # Free parameters for covariance, means and mixture components
         free_params = self.n_features * self.n_components + self.n_features + self.n_components - 1
 
-        bic = -2. * self.__score(x, sum_data=False).mean() * n + free_params * np.log(n)
+        bic = -2. * self.__score(x, as_average=False).mean() * n + free_params * np.log(n)
 
         return bic
 
@@ -218,7 +218,7 @@ class GaussianMixture(torch.nn.Module):
         """
         x = self.check_size(x)
 
-        score = self.__score(x, sum_data=False)
+        score = self.__score(x, as_average=False)
         return score
 
 
@@ -346,7 +346,7 @@ class GaussianMixture(torch.nn.Module):
         self.__update_var(var)
 
 
-    def __score(self, x, sum_data=True):
+    def __score(self, x, as_average=True):
         """
         Computes the log-likelihood of the data under the model.
         args:
@@ -361,8 +361,8 @@ class GaussianMixture(torch.nn.Module):
         weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
         per_sample_score = torch.logsumexp(weighted_log_prob, dim=1)
 
-        if sum_data:
-            return per_sample_score.sum()
+        if as_average:
+            return per_sample_score.mean()
         else:
             return torch.squeeze(per_sample_score)
 
