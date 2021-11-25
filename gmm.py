@@ -208,6 +208,31 @@ class GaussianMixture(torch.nn.Module):
         return self.predict(x, probs=True)
 
 
+    def sample(self, n):
+        """
+        Samples from the model.
+        args:
+            n:          int
+        returns:
+            x:          torch.Tensor (n, d)
+            y:          torch.Tensor (n)
+        """
+        counts = torch.distributions.multinomial.Multinomial(total_count=n, probs=self.pi.squeeze()).sample()
+        x = torch.Tensor([])
+        y = torch.cat([torch.full([int(sample)], j) for j, sample in enumerate(counts)])
+
+        for k in range(self.n_components):
+            if self.covariance_type == "diag":
+                x_k = self.mu[0, k] + torch.randn(int(counts[k]), self.n_features) * torch.sqrt(self.var[0, k])
+            elif self.covariance_type == "full":
+                d_k = torch.distributions.multivariate_normal.MultivariateNormal(self.mu[0, k], self.var[0, k])
+                x_k = torch.stack([d_k.sample() for _ in range(int(counts[k]))])
+
+            x = torch.cat((x, x_k), dim=0)
+
+        return x, y
+
+
     def score_samples(self, x):
         """
         Computes log-likelihood of samples under the current model.
