@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set(style="white", font="Arial")
@@ -37,7 +37,7 @@ def plot(data, y):
     n = y.shape[0]
 
     fig, ax = plt.subplots(1, 1, figsize=(1.61803398875*4, 4))
-    ax.set_facecolor('#bbbbbb')
+    ax.set_facecolor("#bbbbbb")
     ax.set_xlabel("Dimension 1")
     ax.set_ylabel("Dimension 2")
 
@@ -55,10 +55,10 @@ def plot(data, y):
         else:
             ax.scatter(*point, zorder=i, color="#ffdbdb", alpha=.6, edgecolors=colors[5])
 
-    handles = [plt.Line2D([0], [0], color='w', lw=4, label='Ground Truth 1'),
-        plt.Line2D([0], [0], color='black', lw=4, label='Ground Truth 2'),
-        plt.Line2D([0], [0], color=colors[1], lw=4, label='Predicted 1'),
-        plt.Line2D([0], [0], color=colors[5], lw=4, label='Predicted 2')]
+    handles = [plt.Line2D([0], [0], color="w", lw=4, label="Ground Truth 1"),
+        plt.Line2D([0], [0], color="black", lw=4, label="Ground Truth 2"),
+        plt.Line2D([0], [0], color=colors[1], lw=4, label="Predicted 1"),
+        plt.Line2D([0], [0], color=colors[5], lw=4, label="Predicted 2")]
 
     legend = ax.legend(loc="best", handles=handles)
 
