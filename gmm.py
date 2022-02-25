@@ -79,15 +79,15 @@ class GaussianMixture(torch.nn.Module):
             if self.var_init is not None:
                 # (1, k, d, d)
                 assert self.var_init.size() == (1, self.n_components, self.n_features, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i, %i)" % (self.n_components, self.n_features, self.n_features)
-                self.var = torch.nn.Parameter(self.var_init, requires_grad=False,)
+                self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
             else:
                 self.var = torch.nn.Parameter(
-                    torch.eye(self.n_features,dtype=torch.float64).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
-                    requires_grad=False)
+                    torch.eye(self.n_features).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
+                    requires_grad=False
+                )
 
         # (1, k, 1)
         self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(1. / self.n_components)
-
         self.params_fitted = False
 
 
@@ -151,7 +151,7 @@ class GaussianMixture(torch.nn.Module):
 
             if torch.isinf(self.log_likelihood.abs()) or torch.isnan(self.log_likelihood):
                 device = self.mu.device
-                # When the log-likelihood assumes inane values, reinitialize model
+                # When the log-likelihood assumes unbound values, reinitialize model
                 self.__init__(self.n_components,
                     self.n_features,
                     covariance_type=self.covariance_type,
@@ -261,6 +261,7 @@ class GaussianMixture(torch.nn.Module):
         if self.covariance_type == "full":
             mu = self.mu
             var = self.var
+
             precision = torch.inverse(var)
             d = x.shape[-1]
 
@@ -268,8 +269,6 @@ class GaussianMixture(torch.nn.Module):
 
             log_det = self._calculate_log_det(precision)
 
-            x = x.double() 
-            mu = mu.double()
             x_mu_T = (x - mu).unsqueeze(-2)
             x_mu = (x - mu).unsqueeze(-1)
 

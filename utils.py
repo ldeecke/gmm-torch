@@ -8,7 +8,7 @@ def calculate_matmul_n_times(n_components, mat_a, mat_b):
         mat_a:      torch.Tensor (n, k, 1, d)
         mat_b:      torch.Tensor (1, k, d, d)
     """
-    res = torch.zeros(mat_a.shape).double().to(mat_a.device)
+    res = torch.zeros(mat_a.shape).to(mat_a.device)
     
     for i in range(n_components):
         mat_a_i = mat_a[:, i, :, :].squeeze(-2)
