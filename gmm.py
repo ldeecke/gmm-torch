@@ -338,8 +338,8 @@ class GaussianMixture(torch.nn.Module):
         # log_det = 2 * torch.log(diagonal).sum(dim=-1)
         
 
-        assert (var != var).sum() == 0, "var contains NaN"
-        assert (var.abs() == float("inf")).sum() == 0, "var contains inf"
+        assert (var != var).sum() == 0, "`var` contains NaN, set `covariance_data_type` to double"
+        assert (var.abs() == float("inf")).sum() == 0, "`var` contains inf, set `covariance_data_type` to double"
         log_det = torch.empty(size=(self.n_components,), device=var.device, dtype=var.dtype)
         
         for k in range(self.n_components):
