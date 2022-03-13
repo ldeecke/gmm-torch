@@ -1,5 +1,5 @@
 # Benchmark
-GPU: Tesla T4 (16GM DRAM)
+GPU: Tesla T4 (16GB DRAM)
 
 - covariance_type = "full"
 - init_params = "random"
