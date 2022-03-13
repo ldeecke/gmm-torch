@@ -22,25 +22,26 @@ class GaussianMixture(torch.nn.Module):
         Initializes the model and brings all tensors into their required shape.
         The class expects data to be fed as a flat tensor in (n, d).
         The class owns:
-            x:               torch.Tensor (n, 1, d)
-            mu:              torch.Tensor (1, k, d)
-            var:             torch.Tensor (1, k, d) or (1, k, d, d)
-            pi:              torch.Tensor (1, k, 1)
-            covariance_type: str
-            eps:             float
-            init_params:     str
-            log_likelihood:  float
-            n_components:    int
-            n_features:      int
+            x:                      torch.Tensor (n, 1, d)
+            mu:                     torch.Tensor (1, k, d)
+            var:                    torch.Tensor (1, k, d) or (1, k, d, d)
+            pi:                     torch.Tensor (1, k, 1)
+            covariance_type:        str
+            eps:                    float
+            init_params:            str
+            log_likelihood:         float
+            n_components:           int
+            n_features:             int
         args:
-            n_components:    int
-            n_features:      int
+            n_components:           int
+            n_features:             int
         options:
-            mu_init:         torch.Tensor (1, k, d)
-            var_init:        torch.Tensor (1, k, d) or (1, k, d, d)
-            covariance_type: str
-            eps:             float
-            init_params:     str
+            mu_init:                torch.Tensor (1, k, d)
+            var_init:               torch.Tensor (1, k, d) or (1, k, d, d)
+            covariance_type:        str
+            eps:                    float
+            init_params:            str
+            covariance_data_type:   str or torch.dtype
         """
         super(GaussianMixture, self).__init__()
 
@@ -54,6 +55,13 @@ class GaussianMixture(torch.nn.Module):
         self.log_likelihood = -np.inf
         self.safe_mode = True
         self.prev_log_prob = None
+
+        assert covariance_data_type in ["float", "double", torch.float, torch.double]
+        if covariance_data_type == "float":
+            covariance_data_type = torch.float
+        elif covariance_data_type == "double":
+            covariance_data_type = torch.double
+        self.covariance_data_type = covariance_data_type
 
         self.covariance_type = covariance_type
         self.init_params = init_params
@@ -86,7 +94,7 @@ class GaussianMixture(torch.nn.Module):
                 self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
             else:
                 self.var = torch.nn.Parameter(
-                    torch.eye(self.n_features, dtype=torch.float64).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
+                    torch.eye(self.n_features, dtype=self.covariance_data_type).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
                     requires_grad=False
                 )
 
