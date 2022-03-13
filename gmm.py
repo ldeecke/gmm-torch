@@ -324,7 +324,7 @@ class GaussianMixture(torch.nn.Module):
         """
 
         cholesky = torch.linalg.cholesky(var[0])
-        diag = torch.diagonal(cholesky, dim1=-2, dim2=-1)
+        diagonal = torch.diagonal(cholesky, dim1=-2, dim2=-1)
         del cholesky
         log_det = 2 * torch.log(diagonal).sum(dim=-1)
         
