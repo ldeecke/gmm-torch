@@ -374,7 +374,6 @@ class GaussianMixture(torch.nn.Module):
         N, _, D = x.shape
         K = self.n_components
 
-        resp = torch.exp(log_resp)
         resp_sum = resp.sum(dim=0).squeeze(-1) #[K]
 
         pi = torch.sum(resp, dim=0, keepdim=True) + self.eps
