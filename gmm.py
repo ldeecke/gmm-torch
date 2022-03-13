@@ -418,13 +418,13 @@ class GaussianMixture(torch.nn.Module):
         return pi, mu, var
 
 
-    def __em(self, x):
+    def __em(self, x, use_prev_log_prob_norm=False):
         """
         Performs one iteration of the expectation-maximization algorithm by calling the respective subroutines.
         args:
             x:          torch.Tensor (n, 1, d)
         """
-        _, resp = self._e_step(x)
+        _, resp = self._e_step(x, use_prev_log_prob_norm)
         resp.exp_()
         pi, mu, var = self._m_step(x, resp)
 
