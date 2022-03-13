@@ -345,7 +345,7 @@ class GaussianMixture(torch.nn.Module):
         for k in range(self.n_components):
             evals = torch.linalg.eigvals(var[0, k])
             # evals, _ = torch.linalg.eig(var[0, k])
-            log_det = torch.log(evals).sum().to(var.dtype)
+            log_det[i] = torch.log(evals).sum().to(var.dtype)
 
         return log_det.unsqueeze(-1)
 
