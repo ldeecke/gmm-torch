@@ -3,7 +3,8 @@ import numpy as np
 
 from math import pi
 from scipy.special import logsumexp
-from utils import calculate_matmul, calculate_matmul_n_times
+from utils import calculate_matmul, calculate_matmul_n_times, find_optimal_splits
+from tqdm import tqdm
 
 
 class GaussianMixture(torch.nn.Module):
@@ -141,14 +142,15 @@ class GaussianMixture(torch.nn.Module):
 
         i = 0
         j = np.inf
-
+        
+        pbar = tqdm(total=n_iter)
         while (i <= n_iter) and (j >= delta):
 
             log_likelihood_old = self.log_likelihood
             mu_old = self.mu
             var_old = self.var
 
-            self.__em(x)
+            self.__em(x, use_prev_log_prob_norm=True)
             self.log_likelihood = self.__score(x)
 
             if torch.isinf(self.log_likelihood.abs()) or torch.isnan(self.log_likelihood):
@@ -172,8 +174,10 @@ class GaussianMixture(torch.nn.Module):
                 # When score decreases, revert to old parameters
                 self.__update_mu(mu_old)
                 self.__update_var(var_old)
+            pbar.update(1)
 
         self.params_fitted = True
+        pbar.close()
 
 
     def predict(self, x, probs=False):
@@ -190,7 +194,8 @@ class GaussianMixture(torch.nn.Module):
         """
         x = self.check_size(x)
 
-        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
+        weighted_log_prob = self._estimate_log_prob(x)
+        weighted_log_prob.add_(torch.log(self.pi))
 
         if probs:
             p_k = torch.exp(weighted_log_prob)
@@ -259,25 +264,47 @@ class GaussianMixture(torch.nn.Module):
             log_prob:     torch.Tensor (n, k, 1)
         """
         x = self.check_size(x)
+        N, _, D = x.shape
+        K = self.n_components
 
         if self.covariance_type == "full":
             mu = self.mu
             var = self.var
 
+            x = x.to(var.dtype)
+            mu = mu.to(var.dtype)
+
             precision = torch.inverse(var)
-            d = x.shape[-1]
 
-            log_2pi = d * np.log(2. * pi)
+            log_2pi = D * np.log(2. * pi)
 
-            log_det = self._calculate_log_det(precision)
+            log_det = self._calculate_log_det(precision) #[K, 1]
 
-            x_mu_T = (x - mu).unsqueeze(-2)
-            x_mu = (x - mu).unsqueeze(-1)
+            x_mu_T_precision_x_mu = torch.empty(N, K, 1, device=x.device, dtype=x.dtype)
+            
+            def get_required_memory(sub_K):
+                x_mu_requires = sub_K * N * D * x.element_size()
+                x_mu_T_precision_requires = sub_K * N * D * x.element_size()
+                calculate_matmul_requires = (sub_K * N * D + sub_K * N) * x.element_size()
+                return x_mu_requires + x_mu_T_precision_requires + calculate_matmul_requires
+            
+            n_splits = find_optimal_splits(K, get_required_memory, x.device, safe_mode=self.safe_mode)
+            sub_K = math.ceil(K / n_splits)
+            for i in range(n_splits):
+              K_start = i * sub_K
+              K_end = min((i + 1) * sub_K, K)
+              sub_x_mu = x - mu[:, K_start: K_end, :] #[N, sub_K, D]
+              sub_x_mu_T_precision = (sub_x_mu.transpose(0, 1) @ precision[:, K_start: K_end]).transpose(0, 2)
+              sub_x_mu_T_precision_x_mu = calculate_matmul(sub_x_mu_T_precision, sub_x_mu[:, :, :, None]) #[N, sub_K, 1]
+              x_mu_T_precision_x_mu[:, K_start: K_end] = sub_x_mu_T_precision_x_mu
+              del sub_x_mu, sub_x_mu_T_precision
+            
+            log_prob = x_mu_T_precision_x_mu
+            log_prob.add_(log_2pi)
+            log_prob.add_(-log_det)
+            log_prob.mul_(-0.5)
 
-            x_mu_T_precision = calculate_matmul_n_times(self.n_components, x_mu_T, precision)
-            x_mu_T_precision_x_mu = calculate_matmul(x_mu_T_precision, x_mu)
-
-            return -.5 * (log_2pi - log_det + x_mu_T_precision_x_mu)
+            return log_prob
 
         elif self.covariance_type == "diag":
             mu = self.mu
@@ -289,64 +316,97 @@ class GaussianMixture(torch.nn.Module):
             return -.5 * (self.n_features * np.log(2. * pi) + log_p) + log_det
 
 
-
     def _calculate_log_det(self, var):
         """
         Calculate log determinant in log space, to prevent overflow errors.
         args:
             var:            torch.Tensor (1, k, d, d)
         """
-        log_det = torch.empty(size=(self.n_components,)).to(var.device)
-        
-        for k in range(self.n_components):
-            log_det[k] = 2 * torch.log(torch.diagonal(torch.linalg.cholesky(var[0,k]))).sum()
 
+        cholesky = torch.linalg.cholesky(var[0])
+        diag = torch.diagonal(cholesky, dim1=-2, dim2=-1)
+        del cholesky
+        log_det = 2 * torch.log(diagonal).sum(dim=-1)
+        
         return log_det.unsqueeze(-1)
 
 
-    def _e_step(self, x):
+    def _e_step(self, x, use_prev_log_prob_norm=False):
         """
         Computes log-responses that indicate the (logarithmic) posterior belief (sometimes called responsibilities) that a data point was generated by one of the k mixture components.
         Also returns the mean of the mean of the logarithms of the probabilities (as is done in sklearn).
         This is the so-called expectation step of the EM-algorithm.
         args:
-            x:              torch.Tensor (n, d) or (n, 1, d)
+            x:                          torch.Tensor (n, d) or (n, 1, d)
+            use_prev_log_prob_norm:     bool
         returns:
-            log_prob_norm:  torch.Tensor (1)
-            log_resp:       torch.Tensor (n, k, 1)
+            log_prob_norm:              torch.Tensor (1)
+            log_resp:                   torch.Tensor (n, k, 1)
         """
         x = self.check_size(x)
 
-        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
+        if self.prev_log_prob_norm is not None and use_prev_log_prob_norm:
+            log_prob_norm = self.prev_log_prob_norm
+        else:
+            weighted_log_prob = self._estimate_log_prob(x)
+            weighted_log_prob.add_(torch.log(self.pi))
+            log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
 
-        log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
-        log_resp = weighted_log_prob - log_prob_norm
+        log_resp = weighted_log_prob
+        log_resp.sub_(log_prob_norm)
 
         return torch.mean(log_prob_norm), log_resp
 
 
-    def _m_step(self, x, log_resp):
+    def _m_step(self, x, resp):
         """
         From the log-probabilities, computes new parameters pi, mu, var (that maximize the log-likelihood). This is the maximization step of the EM-algorithm.
         args:
             x:          torch.Tensor (n, d) or (n, 1, d)
-            log_resp:   torch.Tensor (n, k, 1)
+            resp:   torch.Tensor (n, k, 1)
         returns:
             pi:         torch.Tensor (1, k, 1)
             mu:         torch.Tensor (1, k, d)
             var:        torch.Tensor (1, k, d)
         """
         x = self.check_size(x)
+        N, _, D = x.shape
+        K = self.n_components
 
         resp = torch.exp(log_resp)
+        resp_sum = resp.sum(dim=0).squeeze(-1) #[K]
 
         pi = torch.sum(resp, dim=0, keepdim=True) + self.eps
-        mu = torch.sum(resp * x, dim=0, keepdim=True) / pi
+
+        mu = (resp.transpose(0, 1)[:, :, 0] @ x[:, 0, :].double() )[None, :, :]
+        mu.div_(pi)
 
         if self.covariance_type == "full":
-            eps = (torch.eye(self.n_features) * self.eps).to(x.device)
-            var = torch.sum((x - mu).unsqueeze(-1).matmul((x - mu).unsqueeze(-2)) * resp.unsqueeze(-1), dim=0,
-                            keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) + eps
+            var = torch.empty(1, K, D, D, device=x.device, dtype=resp.dtype)
+            eps = (torch.eye(K) * self.eps).to(x.device)
+
+            def get_required_memory(sub_K):
+                sub_x_mu_requires = N * D * sub_K * resp.element_size()
+                sub_x_mu_resp_requires = 2 * N * D * sub_K * resp.element_size()
+                sub_var_requires = D * D * sub_K * resp.element_size()
+                return sub_x_mu_requires + sub_x_mu_resp_requires + sub_var_requires
+            
+            n_splits = find_optimal_splits(K, get_required_memory, x.device, safe_mode=self.safe_mode)
+            sub_K = math.ceil(K / n_splits)
+
+            for i in range(n_splits):
+                K_start = i * sub_K
+                K_end = min((i + 1) * sub_K, K)
+                sub_mu = mu[:, K_start: K_end, :] #[1, sub_K, D]
+                sub_resp = (resp[:, K_start: K_end, :]).permute(1, 2, 0) #[N, sub_K, 1]
+                sub_x_mu = (x - sub_mu).permute(1, 2, 0) #[sub_K, D, N]
+                sub_x_mu_resp = (sub_x_mu * sub_resp).transpose(-1, -2) #[sub_K, N, D]
+                var[:, K_start: K_end, :, :] = sub_x_mu @ sub_x_mu_resp #[sub_K, D, D]
+                del sub_x_mu, sub_x_mu_resp
+            var.div_(resp_sum[None, :, None, None])
+            var.add_(eps[None, None, :, :])
+            
+
         elif self.covariance_type == "diag":
             x2 = (resp * x * x).sum(0, keepdim=True) / pi
             mu2 = mu * mu
@@ -364,8 +424,9 @@ class GaussianMixture(torch.nn.Module):
         args:
             x:          torch.Tensor (n, 1, d)
         """
-        _, log_resp = self._e_step(x)
-        pi, mu, var = self._m_step(x, log_resp)
+        _, resp = self._e_step(x)
+        resp.exp_()
+        pi, mu, var = self._m_step(x, resp)
 
         self.__update_pi(pi)
         self.__update_mu(mu)
@@ -384,8 +445,10 @@ class GaussianMixture(torch.nn.Module):
             per_sample_score:   torch.Tensor (n)
 
         """
-        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
+        weighted_log_prob = self._estimate_log_prob(x)
+        weighted_log_prob.add_(torch.log(self.pi))
         per_sample_score = torch.logsumexp(weighted_log_prob, dim=1)
+        self.prev_log_prob_norm = per_sample_score.unsqueeze(1)
 
         if as_average:
             return per_sample_score.mean()
