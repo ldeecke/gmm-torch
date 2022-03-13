@@ -86,7 +86,7 @@ class GaussianMixture(torch.nn.Module):
                 self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
             else:
                 self.var = torch.nn.Parameter(
-                    torch.eye(self.n_features, torch.float64).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
+                    torch.eye(self.n_features, dtype=torch.float64).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
                     requires_grad=False
                 )
 
