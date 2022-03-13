@@ -50,6 +50,8 @@ class GaussianMixture(torch.nn.Module):
         self.eps = eps
 
         self.log_likelihood = -np.inf
+        self.safe_mode = True
+        self.prev_log_prob_norm = None
 
         self.covariance_type = covariance_type
         self.init_params = init_params
