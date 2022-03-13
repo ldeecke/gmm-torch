@@ -332,11 +332,14 @@ class GaussianMixture(torch.nn.Module):
             var:            torch.Tensor (1, k, d, d)
         """
 
-        cholesky = torch.linalg.cholesky(var[0])
-        diagonal = torch.diagonal(cholesky, dim1=-2, dim2=-1)
-        del cholesky
-        log_det = 2 * torch.log(diagonal).sum(dim=-1)
+        # cholesky = torch.linalg.cholesky(var[0])
+        # diagonal = torch.diagonal(cholesky, dim1=-2, dim2=-1)
+        # del cholesky
+        # log_det = 2 * torch.log(diagonal).sum(dim=-1)
         
+        evals = torch.linalg.eigvals(var[0])
+        log_det = evals.log().sum(dim=-1).to(var.dtype)
+
         return log_det.unsqueeze(-1)
 
 
