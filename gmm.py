@@ -84,14 +84,14 @@ class GaussianMixture(torch.nn.Module):
             if self.var_init is not None:
                 # (1, k, d)
                 assert self.var_init.size() == (1, self.n_components, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i)" % (self.n_components, self.n_features)
-                self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
+                self.var = torch.nn.Parameter(self.var_init.to(self.covariance_data_type), requires_grad=False)
             else:
-                self.var = torch.nn.Parameter(torch.ones(1, self.n_components, self.n_features), requires_grad=False)
+                self.var = torch.nn.Parameter(torch.ones(1, self.n_components, self.n_features, dtype=self.covariance_data_type), requires_grad=False)
         elif self.covariance_type == "full":
             if self.var_init is not None:
                 # (1, k, d, d)
                 assert self.var_init.size() == (1, self.n_components, self.n_features, self.n_features), "Input var_init does not have required tensor dimensions (1, %i, %i, %i)" % (self.n_components, self.n_features, self.n_features)
-                self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
+                self.var = torch.nn.Parameter(self.var_init.to(self.covariance_data_type), requires_grad=False)
             else:
                 self.var = torch.nn.Parameter(
                     torch.eye(self.n_features, dtype=self.covariance_data_type).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
