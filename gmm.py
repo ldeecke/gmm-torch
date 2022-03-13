@@ -355,7 +355,7 @@ class GaussianMixture(torch.nn.Module):
         This is the so-called expectation step of the EM-algorithm.
         args:
             x:                          torch.Tensor (n, d) or (n, 1, d)
-            use_prev_log_prob:     bool
+            use_prev_log_prob:          bool
         returns:
             log_prob_norm:              torch.Tensor (1)
             log_resp:                   torch.Tensor (n, k, 1)
@@ -381,7 +381,7 @@ class GaussianMixture(torch.nn.Module):
         From the log-probabilities, computes new parameters pi, mu, var (that maximize the log-likelihood). This is the maximization step of the EM-algorithm.
         args:
             x:          torch.Tensor (n, d) or (n, 1, d)
-            resp:   torch.Tensor (n, k, 1)
+            resp:       torch.Tensor (n, k, 1)
         returns:
             pi:         torch.Tensor (1, k, 1)
             mu:         torch.Tensor (1, k, d)
