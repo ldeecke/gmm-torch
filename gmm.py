@@ -86,7 +86,7 @@ class GaussianMixture(torch.nn.Module):
                 self.var = torch.nn.Parameter(self.var_init, requires_grad=False)
             else:
                 self.var = torch.nn.Parameter(
-                    torch.eye(self.n_features).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
+                    torch.eye(self.n_features, torch.float64).reshape(1, 1, self.n_features, self.n_features).repeat(1, self.n_components, 1, 1),
                     requires_grad=False
                 )
 
@@ -351,7 +351,7 @@ class GaussianMixture(torch.nn.Module):
         else:
             weighted_log_prob = self._estimate_log_prob(x)
             weighted_log_prob.add_(torch.log(self.pi))
-            
+
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
 
         log_resp = weighted_log_prob
