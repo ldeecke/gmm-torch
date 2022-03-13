@@ -337,8 +337,12 @@ class GaussianMixture(torch.nn.Module):
         # del cholesky
         # log_det = 2 * torch.log(diagonal).sum(dim=-1)
         
-        evals = torch.linalg.eigvals(var[0])
-        log_det = evals.log().sum(dim=-1).to(var.dtype)
+
+        log_det = torch.empty(size=(self.n_components,), device=var.device, dtype=var.dtype)
+        
+        for k in range(self.n_components):
+            evals = torch.linalg.eigvals(var[0, i])
+            log_det = evals.log().sum().to(var.dtype)
 
         return log_det.unsqueeze(-1)
 
