@@ -19,12 +19,12 @@ GPU: Tesla T4 (16GM DRAM)
 - OOM: Out Of Memory
 - NAN: Covar contains NaN
 - k-loop: almost the same as original `GaussianMixture`, except 
-```
+```python
 var = torch.sum((x - mu).unsqueeze(-1).matmul((x - mu).unsqueeze(-2)) * resp.unsqueeze(-1), dim=0,
   keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) + eps
 ```
 in `_m_step` is replaced with 
-```
+```python
 var = torch.empty(1, self.n_components, self.n_features, self.n_features, device=x.device, dtype=resp.dtype)
 eps = (torch.eye(self.n_features) * self.eps).to(x.device)
 for i in range(self.n_components):
