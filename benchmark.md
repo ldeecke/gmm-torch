@@ -18,6 +18,7 @@ GPU: Tesla T4 (16GB DRAM)
 ### Notes:
 - OOM: Out Of Memory
 - NAN: Covar contains NaN
+- Single/Double: dtype of covariance matrix
 - k-loop: almost the same as original `GaussianMixture`, except 
 ```python
 var = torch.sum((x - mu).unsqueeze(-1).matmul((x - mu).unsqueeze(-2)) * resp.unsqueeze(-1), dim=0,
