@@ -3,7 +3,7 @@ GPU: Tesla T4 (16GB DRAM)
 
 - covariance_type = "full"
 - init_params = "random"
-- n_ter = 20
+- n_iter = 20
 - delta = 0
 
 | setup | original | k-loop | optimized (single) | optimized (double) |
