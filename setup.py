@@ -12,4 +12,5 @@ setuptools.setup(
     version="v0.0.1",
     url="https://github.com/MilesCranmer/gmm-torch",
     install_requires=["numpy", "torch", "scipy"],
+    packages=setuptools.find_packages(),
 )
