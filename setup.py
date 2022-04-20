@@ -8,7 +8,7 @@ except FileNotFoundError:
 
 
 setuptools.setup(
-    name="gmm_tools",
+    name="gmm_torch",
     version="v0.0.1",
     url="https://github.com/MilesCranmer/gmm-torch",
     install_requires=["numpy", "torch", "scipy"],
