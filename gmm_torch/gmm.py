@@ -3,7 +3,7 @@ import numpy as np
 
 from math import pi
 from scipy.special import logsumexp
-from utils import calculate_matmul, calculate_matmul_n_times
+from .utils import calculate_matmul, calculate_matmul_n_times
 
 
 class GaussianMixture(torch.nn.Module):
