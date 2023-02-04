@@ -19,14 +19,17 @@ def gumbel_stable_loss(diff, beta, clip=None):
     z = diff/beta
     if clip is not None:
         z = torch.clamp(z, max=clip)
+
     max_z = torch.max(z)
     max_z = torch.where(max_z < -1.0, torch.tensor(-1.0, dtype=torch.double, device=max_z.device), max_z)
-    max_z = max_z.detach() # Detach the gradients
+    max_z = max_z.detach()  # Detach the gradients
     loss = torch.exp(z - max_z) - z*torch.exp(-max_z) - torch.exp(-max_z)    # scale by e^max_z
     return loss
 
+
+
 def log_partition(x, beta):
-    """Analytically calculate the Log-Partition over an emperical distribution
+    """Analytically calculate the Log-Partition over an empirical distribution
     """
     n = x.shape[0]
     return beta * logsumexp(x / beta) - beta * np.log(n)

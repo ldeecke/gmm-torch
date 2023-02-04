@@ -33,7 +33,7 @@ def main():
     plot(data, y)
 
 
-def plot(data, y):
+def plot(data, y, iter):
     n = y.shape[0]
 
     fig, ax = plt.subplots(1, 1, figsize=(1.61803398875*4, 4))
@@ -52,6 +52,8 @@ def plot(data, y):
         if y[i] == 0:
             # .. as well as their predicted class
             ax.scatter(*point, zorder=i, color="#dbe9ff", alpha=.6, edgecolors=colors[1])
+        elif y[i] == 1:
+            ax.scatter(*point, zorder=i, color="#aaaaaa", alpha=.6, edgecolors=colors[2])
         else:
             ax.scatter(*point, zorder=i, color="#ffdbdb", alpha=.6, edgecolors=colors[5])
 
@@ -63,7 +65,8 @@ def plot(data, y):
     legend = ax.legend(loc="best", handles=handles)
 
     plt.tight_layout()
-    plt.savefig("example.pdf")
+    plt.savefig("example" + str(iter) + ".pdf")
+    plt.close()
 
 
 if __name__ == "__main__":
