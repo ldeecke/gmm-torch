@@ -141,7 +141,7 @@ class GaussianMixture(torch.nn.Module):
         j = np.inf
 
         while (i <= n_iter) and (j >= delta):
-
+            print(self.log_likelihood)
             log_likelihood_old = self.log_likelihood
             mu_old = self.mu
             var_old = self.var
