@@ -99,7 +99,7 @@ def main():
     data, true_ys, true_mus = create_data_1(N, K, D)
 
     # Next, the Gaussian mixture is instantiated and ..
-    model = GaussianMixtureExact(K, D)
+    model = GaussianMixtureGumbel(K, D)
     model.fit(data)
 
     # .. used to predict the data points as they where shifted

@@ -41,7 +41,7 @@ class GaussianMixtureGumbel(GaussianMixture):
             eps:             float
             init_params:     str
         """
-        super(GaussianMixtureGumbel, self).__init__()
+        super(GaussianMixture, self).__init__()
 
         self.n_components = n_components
         self.n_features = n_features
@@ -72,7 +72,7 @@ class GaussianMixtureGumbel(GaussianMixture):
             log_resp:       torch.Tensor (n, k, 1)
         """
         x = self.check_size(x)
-        weighted_log_prob = self._estimate_log_prob(x) + torch.log(self.pi)
+        weighted_log_prob = self.estimate_log_prob(x) + torch.log(self.pi)
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
         log_resp = weighted_log_prob - log_prob_norm
         return torch.mean(log_prob_norm), log_resp
