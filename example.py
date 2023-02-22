@@ -34,8 +34,8 @@ def plot(data, true_y, pred_y, iter, mus, K):
     for mu_idx, mu in enumerate(mus):
         ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
 
-    handles = [plt.Line2D([0], [0], color=colors[i], lw=4, label="Ground Truth " + i) for i in range(K)]
-    handles += [plt.Line2D([0], [0], color=colors[i], lw=4, label="Predicted " + i) for i in range(K)]
+    handles = [plt.Line2D([0], [0], color=colors[i], lw=4, label="Ground Truth " + str(i)) for i in range(K)]
+    handles += [plt.Line2D([0], [0], color=colors[i], lw=4, label="Predicted " + str(i)) for i in range(K)]
 
     legend = ax.legend(loc="best", handles=handles)
 
