@@ -48,8 +48,6 @@ def plot(data, true_y, pred_y, iter, mus):
         ax.scatter(*point, color=colors[pred_label], s=50, edgecolors=colors[pred_label], alpha=0.6, zorder=point_idx)
 
     for mu_idx, mu in enumerate(mus.data[0]):
-        print(mus)
-        print(mu)
         ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
 
     # handles = [
