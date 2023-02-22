@@ -6,7 +6,7 @@ from scipy.special import logsumexp
 from utils import calculate_matmul, calculate_matmul_n_times
 
 
-class GaussianMixture(torch.nn.Module):
+class GaussianMixtureGumbel(torch.nn.Module):
     """
     Fits a mixture of k=1,..,K Gaussians to the input data (K is supplied via n_components).
     Input tensors are expected to be flat with dimensions (n: number of samples, d: number of features).
@@ -40,7 +40,7 @@ class GaussianMixture(torch.nn.Module):
             eps:             float
             init_params:     str
         """
-        super(GaussianMixture, self).__init__()
+        super(GaussianMixtureGumbel, self).__init__()
 
         self.n_components = n_components
         self.n_features = n_features
@@ -97,25 +97,6 @@ class GaussianMixture(torch.nn.Module):
             x = x.unsqueeze(1)
 
         return x
-
-
-    def bic(self, x):
-        """
-        Bayesian information criterion for a batch of samples.
-        args:
-            x:      torch.Tensor (n, d) or (n, 1, d)
-        returns:
-            bic:    float
-        """
-        x = self.check_size(x)
-        n = x.shape[0]
-
-        # Free parameters for covariance, means and mixture components
-        free_params = self.n_features * self.n_components + self.n_features + self.n_components - 1
-
-        bic = -2. * self.score(x, as_average=False).mean() * n + free_params * np.log(n)
-
-        return bic
 
 
     def fit(self, x, delta=1e-3, n_iter=100, warm_start=False):

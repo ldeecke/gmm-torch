@@ -8,6 +8,7 @@ import torch
 import os
 
 from gmm import GaussianMixture
+from gmm_gumbel import GaussianMixtureGumbel
 from math import sqrt
 
 import numpy as np
@@ -95,7 +96,7 @@ def find_best_permutation(true_ys, pred_ys, K):
 
 
 def main():
-    K = 3
+    K = 4
     D = 2
     data, true_ys, true_mus = create_data_1(K, D)
 
