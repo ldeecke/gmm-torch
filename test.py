@@ -2,7 +2,7 @@ import numpy as np
 import sklearn.mixture
 import torch
 
-from gmm import GaussianMixture
+from gmm_exact import GaussianMixture
 
 import unittest
 

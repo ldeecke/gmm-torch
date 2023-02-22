@@ -5,8 +5,9 @@ from math import pi
 from scipy.special import logsumexp
 from utils import calculate_matmul, calculate_matmul_n_times
 
+from gmm import GaussianMixture
 
-class GaussianMixtureGumbel(torch.nn.Module):
+class GaussianMixtureGumbel(GaussianMixture):
     """
     Fits a mixture of k=1,..,K Gaussians to the input data (K is supplied via n_components).
     Input tensors are expected to be flat with dimensions (n: number of samples, d: number of features).
@@ -229,6 +230,7 @@ class GaussianMixtureGumbel(torch.nn.Module):
         return score
 
 
+    # Copied from gmm_exact.py
     def _estimate_log_prob(self, x):
         """
         Returns a tensor with dimensions (n, k, 1), which indicates the log-likelihood that samples belong to the k-th Gaussian.

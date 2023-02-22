@@ -26,8 +26,6 @@ def gumbel_stable_loss(diff, beta, clip=None):
     loss = torch.exp(z - max_z) - z*torch.exp(-max_z) - torch.exp(-max_z)    # scale by e^max_z
     return loss
 
-
-
 def log_partition(x, beta):
     """Analytically calculate the Log-Partition over an empirical distribution
     """

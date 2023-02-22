@@ -7,7 +7,7 @@ sns.set(style="white", font="Arial")
 import torch
 import os
 
-from gmm import GaussianMixture
+from gmm_exact import GaussianMixtureExact
 from gmm_gumbel import GaussianMixtureGumbel
 from math import sqrt
 
@@ -44,9 +44,7 @@ def plot(data, true_y, pred_y, iter, mus, K):
     plt.savefig(os.path.join("examples", "example" + str(iter) + ".pdf"))
     plt.close()
 
-def create_data_1(K, D):
-    N = 300
-
+def create_data_1(N, K, D):
     # generate some data points ..
     data = torch.Tensor(N, D).normal_()
     # .. and shift them around to non-standard Gaussians
@@ -76,7 +74,6 @@ def create_data_1(K, D):
 
 def find_best_permutation(true_ys, pred_ys, K):
     perms = list(itertools.permutations(range(K)))
-    print(perms)
     best_acc = 0
     best_perm = None
     best_pred_ys = None
@@ -96,12 +93,13 @@ def find_best_permutation(true_ys, pred_ys, K):
 
 
 def main():
+    N = 300
     K = 4
     D = 2
-    data, true_ys, true_mus = create_data_1(K, D)
+    data, true_ys, true_mus = create_data_1(N, K, D)
 
     # Next, the Gaussian mixture is instantiated and ..
-    model = GaussianMixture(K, D)
+    model = GaussianMixtureExact(K, D)
     model.fit(data)
 
     # .. used to predict the data points as they where shifted
