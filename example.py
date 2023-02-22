@@ -5,30 +5,13 @@ import seaborn as sns
 sns.set(style="white", font="Arial")
 
 import torch
+import os
 
 from gmm import GaussianMixture
 from math import sqrt
 
-
-def main():
-    n, d = 300, 2
-
-    # generate some data points ..
-    data = torch.Tensor(n, d).normal_()
-    # .. and shift them around to non-standard Gaussians
-    data[:n//2] -= 1
-    data[:n//2] *= sqrt(3)
-    data[n//2:] += 1
-    data[n//2:] *= sqrt(2)
-
-    # Next, the Gaussian mixture is instantiated and ..
-    n_components = 2
-    model = GaussianMixture(n_components, d)
-    model.fit(data)
-    # .. used to predict the data points as they where shifted
-    y = model.predict(data)
-
-    plot(data, y)
+import numpy as np
+import itertools
 
 
 def plot(data, true_y, pred_y, iter, mus):
@@ -47,7 +30,8 @@ def plot(data, true_y, pred_y, iter, mus):
         ax.scatter(*point, color=colors[true_label], s=3, alpha=0.75, zorder=n+point_idx)
         ax.scatter(*point, color=colors[pred_label], s=50, edgecolors=colors[pred_label], alpha=0.6, zorder=point_idx)
 
-    for mu_idx, mu in enumerate(mus.data[0]):
+    # import ipdb; ipdb.set_trace()
+    for mu_idx, mu in enumerate(mus):
         ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
 
     # handles = [
@@ -60,8 +44,79 @@ def plot(data, true_y, pred_y, iter, mus):
     # legend = ax.legend(loc="best", handles=handles)
 
     plt.tight_layout()
-    plt.savefig("example" + str(iter) + ".pdf")
+    plt.savefig(os.path.join("examples", "example" + str(iter) + ".pdf"))
     plt.close()
+
+def create_data_1(K, D):
+    N = 300
+
+    # generate some data points ..
+    data = torch.Tensor(N, D).normal_()
+    # .. and shift them around to non-standard Gaussians
+    chunk_size = N // K
+
+    # Note that this loops truncates the last chunk_size - 1 if K doesn't divide N
+    true_mus = []
+    true_ys = []
+    for cluster in range(K):
+        true_ys += [cluster] * chunk_size
+
+        # Shift each coordinate by -cluster
+        data[cluster * chunk_size:(cluster + 1) * chunk_size] -= 2 * cluster
+
+        # Even cluster indices have sqrt(2), odd have sqrt(3)
+
+        if cluster % 2 == 0:
+            sigma = 2
+
+        else:
+            sigma = 3
+
+        data[cluster * chunk_size:(cluster + 1) * chunk_size] *= sqrt(sigma)
+        new_mu = np.array([-2 * sqrt(sigma) * cluster] * D)
+        true_mus.append(new_mu)
+
+    return data, true_ys, true_mus
+
+def find_best_permutation(true_ys, pred_ys, K):
+    perms = list(itertools.permutations(range(K)))
+    print(perms)
+    best_acc = 0
+    best_perm = None
+    best_pred_ys = None
+
+    # Do reassignment
+    for perm in perms:
+        new_pred_ys = -np.ones(len(true_ys))  # Can't do in-place
+        for i in range(K):
+            new_pred_ys[np.where(pred_ys == i)] = perm[i]
+        new_acc = np.mean(new_pred_ys == true_ys)
+        if new_acc > best_acc:
+            best_acc = new_acc
+            best_perm = perm
+            best_pred_ys = new_pred_ys.copy()
+
+    return best_pred_ys.astype('int32')
+
+
+def main():
+    K = 3
+    D = 2
+    data, true_ys, true_mus = create_data_1(K, D)
+
+    # Next, the Gaussian mixture is instantiated and ..
+    model = GaussianMixture(K, D)
+    model.fit(data)
+
+    # .. used to predict the data points as they where shifted
+    pred_ys = model.predict(data)
+    # pred_ys = torch.zeros(N)
+    true_ys = np.array(true_ys)
+    true_mus = np.array(true_mus)
+
+    best_pred_ys = find_best_permutation(true_ys, pred_ys, K)
+    plot(data, true_ys, best_pred_ys, 0, true_mus)
+
 
 
 if __name__ == "__main__":
