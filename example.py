@@ -13,8 +13,9 @@ from math import sqrt
 import numpy as np
 import itertools
 
+colors = ['black', 'white', 'red', 'blue', 'green', 'yellow', 'purple']
 
-def plot(data, true_y, pred_y, iter, mus):
+def plot(data, true_y, pred_y, iter, mus, K):
     n = true_y.shape[0]
 
     fig, ax = plt.subplots(1, 1, figsize=(1.61803398875*4, 4))
@@ -22,7 +23,6 @@ def plot(data, true_y, pred_y, iter, mus):
     ax.set_xlabel("Dimension 1")
     ax.set_ylabel("Dimension 2")
 
-    colors = ['black', 'white', 'red']
 
     for point_idx, point in enumerate(data.data):
         true_label = true_y[point_idx]
@@ -34,14 +34,10 @@ def plot(data, true_y, pred_y, iter, mus):
     for mu_idx, mu in enumerate(mus):
         ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
 
-    # handles = [
-    #     plt.Line2D([0], [0], color="white", lw=4, label="Ground Truth 1"),
-    #     plt.Line2D([0], [0], color="black", lw=4, label="Ground Truth 2"),
-    #     plt.Line2D([0], [0], color=colors[1], lw=4, label="Predicted 1"),
-    #     plt.Line2D([0], [0], color=colors[5], lw=4, label="Predicted 2"),
-    # ]
-    #
-    # legend = ax.legend(loc="best", handles=handles)
+    handles = [plt.Line2D([0], [0], color=colors[i], lw=4, label="Ground Truth " + i) for i in range(K)]
+    handles += [plt.Line2D([0], [0], color=colors[i], lw=4, label="Predicted " + i) for i in range(K)]
+
+    legend = ax.legend(loc="best", handles=handles)
 
     plt.tight_layout()
     plt.savefig(os.path.join("examples", "example" + str(iter) + ".pdf"))
@@ -68,7 +64,6 @@ def create_data_1(K, D):
 
         if cluster % 2 == 0:
             sigma = 2
-
         else:
             sigma = 3
 
@@ -115,7 +110,7 @@ def main():
     true_mus = np.array(true_mus)
 
     best_pred_ys = find_best_permutation(true_ys, pred_ys, K)
-    plot(data, true_ys, best_pred_ys, 0, true_mus)
+    plot(data, true_ys, best_pred_ys, 0, true_mus, K)
 
 
 
