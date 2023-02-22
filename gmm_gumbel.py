@@ -113,7 +113,7 @@ class GaussianMixture(torch.nn.Module):
         # Free parameters for covariance, means and mixture components
         free_params = self.n_features * self.n_components + self.n_features + self.n_components - 1
 
-        bic = -2. * self.__score(x, as_average=False).mean() * n + free_params * np.log(n)
+        bic = -2. * self.score(x, as_average=False).mean() * n + free_params * np.log(n)
 
         return bic
 
@@ -141,13 +141,13 @@ class GaussianMixture(torch.nn.Module):
         j = np.inf
 
         while (i <= n_iter) and (j >= delta):
-
+            print(self.log_likelihood)
             log_likelihood_old = self.log_likelihood
             mu_old = self.mu
             var_old = self.var
 
-            self.__em(x)
-            self.log_likelihood = self.__score(x)
+            self.em(x)
+            self.log_likelihood = self.score(x)
 
             if torch.isinf(self.log_likelihood.abs()) or torch.isnan(self.log_likelihood):
                 device = self.mu.device
@@ -168,8 +168,8 @@ class GaussianMixture(torch.nn.Module):
 
             if j <= delta:
                 # When score decreases, revert to old parameters
-                self.__update_mu(mu_old)
-                self.__update_var(var_old)
+                self.update_mu(mu_old)
+                self.update_var(var_old)
 
         self.params_fitted = True
 
@@ -244,7 +244,7 @@ class GaussianMixture(torch.nn.Module):
         """
         x = self.check_size(x)
 
-        score = self.__score(x, as_average=False)
+        score = self.score(x, as_average=False)
         return score
 
 
@@ -320,6 +320,7 @@ class GaussianMixture(torch.nn.Module):
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
         log_resp = weighted_log_prob - log_prob_norm
 
+
         return torch.mean(log_prob_norm), log_resp
 
 
@@ -356,7 +357,7 @@ class GaussianMixture(torch.nn.Module):
         return pi, mu, var
 
 
-    def __em(self, x):
+    def em(self, x):
         """
         Performs one iteration of the expectation-maximization algorithm by calling the respective subroutines.
         args:
@@ -365,12 +366,12 @@ class GaussianMixture(torch.nn.Module):
         _, log_resp = self._e_step(x)
         pi, mu, var = self._m_step(x, log_resp)
 
-        self.__update_pi(pi)
-        self.__update_mu(mu)
-        self.__update_var(var)
+        self.update_pi(pi)
+        self.update_mu(mu)
+        self.update_var(var)
 
 
-    def __score(self, x, as_average=True):
+    def score(self, x, as_average=True):
         """
         Computes the log-likelihood of the data under the model.
         args:
@@ -391,7 +392,7 @@ class GaussianMixture(torch.nn.Module):
             return torch.squeeze(per_sample_score)
 
 
-    def __update_mu(self, mu):
+    def update_mu(self, mu):
         """
         Updates mean to the provided value.
         args:
@@ -405,7 +406,7 @@ class GaussianMixture(torch.nn.Module):
             self.mu.data = mu
 
 
-    def __update_var(self, var):
+    def update_var(self, var):
         """
         Updates variance to the provided value.
         args:
@@ -428,7 +429,7 @@ class GaussianMixture(torch.nn.Module):
                 self.var.data = var
 
 
-    def __update_pi(self, pi):
+    def update_pi(self, pi):
         """
         Updates pi to the provided value.
         args:
