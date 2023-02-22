@@ -73,6 +73,9 @@ class GaussianMixtureGumbel(GaussianMixture):
         """
         x = self.check_size(x)
         weighted_log_prob = self.estimate_log_prob(x) + torch.log(self.pi)
+
+
+
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
         log_resp = weighted_log_prob - log_prob_norm
         return torch.mean(log_prob_norm), log_resp

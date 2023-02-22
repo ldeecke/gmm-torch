@@ -16,7 +16,7 @@ import itertools
 
 colors = ['black', 'white', 'red', 'blue', 'green', 'yellow', 'purple']
 
-def plot(data, true_y, pred_y, iter, mus, K):
+def plot(data, true_y, pred_y, iter, mus, K, model_str):
     n = true_y.shape[0]
 
     fig, ax = plt.subplots(1, 1, figsize=(1.61803398875*4, 4))
@@ -33,6 +33,7 @@ def plot(data, true_y, pred_y, iter, mus, K):
 
     # import ipdb; ipdb.set_trace()
     for mu_idx, mu in enumerate(mus):
+        #import ipdb; ipdb.set_trace()
         ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
 
     handles = [plt.Line2D([0], [0], color=colors[i], lw=4, label="Ground Truth " + str(i)) for i in range(K)]
@@ -41,7 +42,7 @@ def plot(data, true_y, pred_y, iter, mus, K):
     legend = ax.legend(loc="best", handles=handles)
 
     plt.tight_layout()
-    plt.savefig(os.path.join("examples", "example" + str(iter) + ".pdf"))
+    plt.savefig(os.path.join("examples", model_str, model_str + "example" + str(iter) + ".pdf"))
     plt.close()
 
 def create_data_1(N, K, D):
@@ -99,17 +100,25 @@ def main():
     data, true_ys, true_mus = create_data_1(N, K, D)
 
     # Next, the Gaussian mixture is instantiated and ..
-    model = GaussianMixtureGumbel(K, D)
-    model.fit(data)
+    for model_str in ["exact", "gumbel"]:
+        if model_str == "exact":
+            model = GaussianMixtureExact(K, D)
+        else:
+            model = GaussianMixtureGumbel(K, D)
 
-    # .. used to predict the data points as they where shifted
-    pred_ys = model.predict(data)
-    # pred_ys = torch.zeros(N)
-    true_ys = np.array(true_ys)
-    true_mus = np.array(true_mus)
 
-    best_pred_ys = find_best_permutation(true_ys, pred_ys, K)
-    plot(data, true_ys, best_pred_ys, 0, true_mus, K)
+        model.fit(data)
+        # .. used to predict the data points as they where shifted
+        pred_ys = model.predict(data)
+        # pred_ys = torch.zeros(N)
+        true_ys = np.array(true_ys)
+        true_mus = np.array(true_mus)
+
+        best_pred_ys = find_best_permutation(true_ys, pred_ys, K)
+        plot(data, true_ys, best_pred_ys, 0, true_mus, K, model_str)
+        print(model.mu)
+        print(model.score(data, as_average=True))
+    print("True:", true_mus)
 
 
 
