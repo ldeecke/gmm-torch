@@ -1,10 +1,7 @@
-import torch
 import numpy as np
 
-from math import pi
-from utils import calculate_matmul, calculate_matmul_n_times
-
 from gmm import GaussianMixture
+
 
 class GaussianMixtureExact(GaussianMixture):
     """

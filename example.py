@@ -1,9 +1,3 @@
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set(style="white", font="Arial")
-
 import torch
 import os
 
@@ -14,7 +8,14 @@ from math import sqrt
 import numpy as np
 import itertools
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+import seaborn as sns
+sns.set(style="white", font="Arial")
 colors = ['black', 'white', 'red', 'blue', 'green', 'yellow', 'purple']
+
 
 def plot(data, true_y, pred_y, iter, mus, K, model_str):
     n = true_y.shape[0]
@@ -24,7 +25,6 @@ def plot(data, true_y, pred_y, iter, mus, K, model_str):
     ax.set_xlabel("Dimension 1")
     ax.set_ylabel("Dimension 2")
 
-
     for point_idx, point in enumerate(data.data):
         true_label = true_y[point_idx]
         pred_label = pred_y[point_idx]
@@ -33,7 +33,6 @@ def plot(data, true_y, pred_y, iter, mus, K, model_str):
 
     # import ipdb; ipdb.set_trace()
     for mu_idx, mu in enumerate(mus):
-        #import ipdb; ipdb.set_trace()
         ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
 
     handles = [plt.Line2D([0], [0], color=colors[i], lw=4, label="Ground Truth " + str(i)) for i in range(K)]
@@ -45,52 +44,55 @@ def plot(data, true_y, pred_y, iter, mus, K, model_str):
     plt.savefig(os.path.join("examples", model_str, model_str + "example" + str(iter) + ".pdf"))
     plt.close()
 
+
 def create_data_1(N, K, D):
-    # generate some data points ..
+    # generate some data points
     data = torch.Tensor(N, D).normal_()
-    # .. and shift them around to non-standard Gaussians
+    #  shift them around to non-standard Gaussians
     chunk_size = N // K
 
     # Note that this loops truncates the last chunk_size - 1 if K doesn't divide N
     true_mus = []
     true_ys = []
+    mu_multiplier = 3
     for cluster in range(K):
         true_ys += [cluster] * chunk_size
 
         # Shift each coordinate by -cluster
-        data[cluster * chunk_size:(cluster + 1) * chunk_size] -= 2 * cluster
+        data[cluster * chunk_size:(cluster + 1) * chunk_size] -= mu_multiplier * cluster
 
-        # Even cluster indices have sqrt(2), odd have sqrt(3)
-
+        # Even cluster indices have sqrt(2), odd have sqrt(3) stddev
         if cluster % 2 == 0:
             sigma = 2
         else:
             sigma = 3
 
         data[cluster * chunk_size:(cluster + 1) * chunk_size] *= sqrt(sigma)
-        new_mu = np.array([-2 * sqrt(sigma) * cluster] * D)
+        new_mu = np.array([-mu_multiplier * sqrt(sigma) * cluster] * D)
         true_mus.append(new_mu)
 
     return data, true_ys, true_mus
 
+
 def find_best_permutation(true_ys, pred_ys, K):
     perms = list(itertools.permutations(range(K)))
     best_acc = 0
-    best_perm = None
     best_pred_ys = None
-
-    # Do reassignment
+    best_perm = None
     for perm in perms:
         new_pred_ys = -np.ones(len(true_ys))  # Can't do in-place
+
+        # Reassign all labels
         for i in range(K):
             new_pred_ys[np.where(pred_ys == i)] = perm[i]
+
         new_acc = np.mean(new_pred_ys == true_ys)
         if new_acc > best_acc:
             best_acc = new_acc
             best_perm = perm
             best_pred_ys = new_pred_ys.copy()
-
-    return best_pred_ys.astype('int32')
+    best_perm_inv = np.argsort(np.array(best_perm))
+    return best_pred_ys.astype('int32'), best_perm, best_perm_inv
 
 
 def main():
@@ -99,27 +101,22 @@ def main():
     D = 2
     data, true_ys, true_mus = create_data_1(N, K, D)
 
-    # Next, the Gaussian mixture is instantiated and ..
     for model_str in ["exact", "gumbel"]:
         if model_str == "exact":
             model = GaussianMixtureExact(K, D)
         else:
             model = GaussianMixtureGumbel(K, D)
 
-
         model.fit(data)
-        # .. used to predict the data points as they where shifted
         pred_ys = model.predict(data)
-        # pred_ys = torch.zeros(N)
         true_ys = np.array(true_ys)
         true_mus = np.array(true_mus)
 
-        best_pred_ys = find_best_permutation(true_ys, pred_ys, K)
+        best_pred_ys, best_perm, best_perm_inv = find_best_permutation(true_ys, pred_ys, K)
         plot(data, true_ys, best_pred_ys, 0, true_mus, K, model_str)
-        print(model.mu)
-        print(model.score(data, as_average=True))
-    print("True:", true_mus)
-
+        print(f"{model_str} mus:\n", model.mu[0][best_perm_inv])
+        print(f"{model_str} score: ", model.score(data, as_average=True), "\n")
+    print("True mus:", true_mus)
 
 
 if __name__ == "__main__":

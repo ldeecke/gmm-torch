@@ -1,11 +1,8 @@
 import torch
 import numpy as np
 
-from math import pi
-from scipy.special import logsumexp
-from utils import calculate_matmul, calculate_matmul_n_times
-
 from gmm import GaussianMixture
+
 
 class GaussianMixtureGumbel(GaussianMixture):
     """
@@ -73,8 +70,6 @@ class GaussianMixtureGumbel(GaussianMixture):
         """
         x = self.check_size(x)
         weighted_log_prob = self.estimate_log_prob(x) + torch.log(self.pi)
-
-
 
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)
         log_resp = weighted_log_prob - log_prob_norm
