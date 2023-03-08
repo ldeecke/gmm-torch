@@ -96,6 +96,9 @@ def find_best_permutation(true_ys, pred_ys, K):
 
 
 def main():
+    torch.manual_seed(1337)
+    np.random.seed(1337)
+
     N = 300
     K = 4
     D = 2

@@ -56,7 +56,12 @@ class GaussianMixture(torch.nn.Module):
         assert self.covariance_type in ["full", "diag"]
         assert self.init_params in ["kmeans", "random"]
 
+        self.var = None
+        self.mu = None
         self.initialize_params()
+        # (1, k, 1)
+        self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(1. / self.n_components)
+        self.params_fitted = False
 
     def initialize_params(self):
         if self.mu_init is not None:
@@ -84,34 +89,12 @@ class GaussianMixture(torch.nn.Module):
                     requires_grad=False
                 )
 
-        # (1, k, 1)
-        self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(1. / self.n_components)
-        self.params_fitted = False
-
     def check_size(self, x):
         if len(x.size()) == 2:
             # (n, d) --> (n, 1, d)
             x = x.unsqueeze(1)
 
         return x
-
-    def bic(self, x):
-        """
-        Bayesian information criterion for a batch of samples.
-        args:
-            x:      torch.Tensor (n, d) or (n, 1, d)
-        returns:
-            bic:    float
-        """
-        x = self.check_size(x)
-        n = x.shape[0]
-
-        # Free parameters for covariance, means and mixture components
-        free_params = self.n_features * self.n_components + self.n_features + self.n_components - 1
-
-        bic = -2. * self.score(x, as_average=False).mean() * n + free_params * np.log(n)
-
-        return bic
 
     def fit(self, x, delta=1e-3, n_iter=100, warm_start=False):
         """
@@ -136,7 +119,6 @@ class GaussianMixture(torch.nn.Module):
         j = np.inf
 
         while (i <= n_iter) and (j >= delta):
-
             log_likelihood_old = self.log_likelihood
             mu_old = self.mu
             var_old = self.var
@@ -182,6 +164,7 @@ class GaussianMixture(torch.nn.Module):
         """
         x = self.check_size(x)
 
+        # self.pi is (1, k, 1)
         weighted_log_prob = self.estimate_log_prob(x) + torch.log(self.pi)
 
         if probs:
@@ -301,7 +284,8 @@ class GaussianMixture(torch.nn.Module):
             log_resp:       torch.Tensor (n, k, 1)
         """
         x = self.check_size(x)
-
+        # self.estimate_log_prob(x) is (n, k, 1)
+        # self.pi is (1, k, 1)
         weighted_log_prob = self.estimate_log_prob(x) + torch.log(self.pi)
 
         log_prob_norm = torch.logsumexp(weighted_log_prob, dim=1, keepdim=True)

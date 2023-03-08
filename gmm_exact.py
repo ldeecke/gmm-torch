@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from gmm import GaussianMixture
 
@@ -54,5 +55,11 @@ class GaussianMixtureExact(GaussianMixture):
         assert self.covariance_type in ["full", "diag"]
         assert self.init_params in ["kmeans", "random"]
 
+        self.var = None
+        self.mu = None
         self.initialize_params()
+        # (1, k, 1)
+        self.pi = torch.nn.Parameter(torch.Tensor(1, self.n_components, 1), requires_grad=False).fill_(
+            1. / self.n_components)
+        self.params_fitted = False
 
