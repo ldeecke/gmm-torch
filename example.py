@@ -14,10 +14,10 @@ import matplotlib.pyplot as plt
 
 import seaborn as sns
 sns.set(style="white", font="Arial")
-colors = ['black', 'white', 'red', 'blue', 'green', 'yellow', 'purple']
+colors = ['green', 'white', 'red', 'blue', 'yellow', 'purple']
 
 
-def plot(data, true_y, pred_y, iter, mus, K, model_str):
+def plot(data, true_y, pred_y, iter_, mus, K, model_str):
     n = true_y.shape[0]
 
     fig, ax = plt.subplots(1, 1, figsize=(1.61803398875*4, 4))
@@ -28,20 +28,21 @@ def plot(data, true_y, pred_y, iter, mus, K, model_str):
     for point_idx, point in enumerate(data.data):
         true_label = true_y[point_idx]
         pred_label = pred_y[point_idx]
-        ax.scatter(*point, color=colors[true_label], s=3, alpha=0.75, zorder=n+point_idx)
-        ax.scatter(*point, color=colors[pred_label], s=50, edgecolors=colors[pred_label], alpha=0.6, zorder=point_idx)
+        ax.scatter(*point, color=colors[pred_label], s=3, alpha=0.75, zorder=n+point_idx)
+        ax.scatter(*point, color=colors[true_label], s=50, edgecolors=colors[true_label], alpha=0.6, zorder=point_idx)
 
     # import ipdb; ipdb.set_trace()
     for mu_idx, mu in enumerate(mus):
-        ax.scatter(*mu, color=colors[mu_idx], marker='x', s=100, zorder=2*n)
+        ax.scatter(*mu, color=colors[mu_idx], marker='X', edgecolors='black', s=100, zorder=2*n)
 
-    handles = [plt.Line2D([0], [0], color=colors[i], lw=4, label="Ground Truth " + str(i)) for i in range(K)]
-    handles += [plt.Line2D([0], [0], color=colors[i], lw=4, label="Predicted " + str(i)) for i in range(K)]
+    handles = [plt.scatter([0], [0], color=colors[i], s=3, label="Predicted " + str(i)) for i in range(K)]
+    handles += [plt.scatter([0], [0], color=colors[i], s=50, label="Ground Truth " + str(i)) for i in range(K)]
 
     legend = ax.legend(loc="best", handles=handles)
+    plt.title("Accuracy: " + str(np.mean(true_y == pred_y)))
 
     plt.tight_layout()
-    plt.savefig(os.path.join("examples", model_str, model_str + "example" + str(iter) + ".pdf"))
+    plt.savefig(os.path.join("examples", model_str, model_str + "example" + str(iter_) + ".pdf"))
     plt.close()
 
 
@@ -54,7 +55,7 @@ def create_data_1(N, K, D):
     # Note that this loops truncates the last chunk_size - 1 if K doesn't divide N
     true_mus = []
     true_ys = []
-    mu_multiplier = 3
+    mu_multiplier = 2
     for cluster in range(K):
         true_ys += [cluster] * chunk_size
 

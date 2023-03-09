@@ -102,12 +102,12 @@ class GaussianMixtureGumbel(GaussianMixture):
         # Also need to include the prior!
         true_logP_x0_G_t = torch.logsumexp(logP_x0_G_z_t + torch.log(self.pi).reshape(-1, 1), dim=0)
         print("True marginal for first datapoint:", true_logP_x0_G_t)
-        V_lr = 1e-1
+        V_lr = 3e-2
         V = torch.rand(N, 1, requires_grad=True)
         V_optim = torch.optim.AdamW([V], lr=V_lr)
         num_samples = 1000
 
-        for iter_ in range(1000):
+        for iter_ in range(3000):
             # self.pi is (1, k, 1)
             # NOTE: this sampling might be cheating because we normalize the probs (using the prior)
             z_index = torch.multinomial(self.pi[0, :, 0], num_samples=num_samples, replacement=True)
@@ -126,7 +126,6 @@ class GaussianMixtureGumbel(GaussianMixture):
                     # print("V:", V.data.numpy()[0], "grad: ", V.grad.data.numpy()[0])
                     # print("Difference:", torch.abs(V - true_logP_x0_G_t))
 
-        # import ipdb; ipdb.set_trace()
         return torch.mean(V), logP_x_G_z_t + torch.log(self.pi) - V.reshape(N, 1, 1)
 
     def gumbel_stable_loss(self, alpha, V, beta=1, clip=None):
