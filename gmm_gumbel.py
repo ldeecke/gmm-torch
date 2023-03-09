@@ -94,6 +94,7 @@ class GaussianMixtureGumbel(GaussianMixture):
 
     def e_step(self, x, verbose=False):
         x = self.check_size(x)
+        N = x.shape[0]
         logP_x_G_z_t = self.estimate_log_prob(x)
         logP_x0_G_z_t = logP_x_G_z_t[0]
 
@@ -101,32 +102,38 @@ class GaussianMixtureGumbel(GaussianMixture):
         # Also need to include the prior!
         true_logP_x0_G_t = torch.logsumexp(logP_x0_G_z_t + torch.log(self.pi).reshape(-1, 1), dim=0)
         print("True marginal for first datapoint:", true_logP_x0_G_t)
-        V_lr = 1e-2
-        V = torch.rand(1, requires_grad=True)
+        V_lr = 1e-1
+        V = torch.rand(N, 1, requires_grad=True)
         V_optim = torch.optim.AdamW([V], lr=V_lr)
-        num_samples = 10000
+        num_samples = 1000
 
-        for iter_ in range(30000):
+        for iter_ in range(1000):
             # self.pi is (1, k, 1)
             # NOTE: this sampling might be cheating because we normalize the probs (using the prior)
             z_index = torch.multinomial(self.pi[0, :, 0], num_samples=num_samples, replacement=True)
             # (num_samples,)
             V_optim.zero_grad()
-            logPxGz = logP_x0_G_z_t[z_index].reshape(num_samples)
+            logPxGz = logP_x_G_z_t[:, z_index].reshape(N, num_samples)
             loss = self.gumbel_stable_loss(logPxGz, V, beta=1, clip=None)
 
             loss.backward()
             V_optim.step()
 
             if verbose:
-                print("V:", V.data.numpy()[0], "grad: ", V.grad.data.numpy()[0])
-                print("Difference:", torch.abs(V - true_logP_x0_G_t))
+                if iter_ % 100 == 0:
+                    print(f"iter {iter_}")
+                    print("V:", V.data.numpy())
+                    # print("V:", V.data.numpy()[0], "grad: ", V.grad.data.numpy()[0])
+                    # print("Difference:", torch.abs(V - true_logP_x0_G_t))
+
+        # import ipdb; ipdb.set_trace()
+        return torch.mean(V), logP_x_G_z_t + torch.log(self.pi) - V.reshape(N, 1, 1)
 
     def gumbel_stable_loss(self, alpha, V, beta=1, clip=None):
         # alpha is (num_samples, )
         # V is (1,)
         # z is (num_samples,)
-        z = (alpha - V) / beta
+        # z = (alpha - V) / beta
         #
         # if clip is not None:
         #     z = torch.clamp(z, max=clip)
@@ -142,6 +149,9 @@ class GaussianMixtureGumbel(GaussianMixture):
 
         # torch.exp(z) is (num_samples,)
         # import ipdb; ipdb.set_trace()
+
+        # alpha is (N, num_samples)
+        # V is (N, 1)
         loss = torch.exp((alpha - V)/beta) + (V / beta) - 1
         # print("Loss: ", loss.mean())
         return loss.mean()
