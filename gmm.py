@@ -281,11 +281,10 @@ class GaussianMixture(torch.nn.Module):
             mu = self.mu
             prec = torch.rsqrt(self.var)
 
-            log_p = torch.sum((mu * mu + x * x - 2 * x * mu) * (prec ** 2), dim=2, keepdim=True)
+            log_p = torch.sum((mu * mu + x * x - 2 * x * mu) * prec, dim=2, keepdim=True)
             log_det = torch.sum(torch.log(prec), dim=2, keepdim=True)
 
-            return -.5 * (self.n_features * np.log(2. * pi) + log_p) + log_det
-
+            return -.5 * (self.n_features * np.log(2. * pi) + log_p - log_det)
 
 
     def _calculate_log_det(self, var):
@@ -345,6 +344,7 @@ class GaussianMixture(torch.nn.Module):
             eps = (torch.eye(self.n_features) * self.eps).to(x.device)
             var = torch.sum((x - mu).unsqueeze(-1).matmul((x - mu).unsqueeze(-2)) * resp.unsqueeze(-1), dim=0,
                             keepdim=True) / torch.sum(resp, dim=0, keepdim=True).unsqueeze(-1) + eps
+
         elif self.covariance_type == "diag":
             x2 = (resp * x * x).sum(0, keepdim=True) / pi
             mu2 = mu * mu

@@ -49,20 +49,22 @@ class CpuCheck(unittest.TestCase):
         n_components = np.random.randint(1, 100)
 
         # (n, k, d)
-        x = torch.randn(400, 1, d)
+        x = torch.randn(400, 1, d).double()
         # (n, d)
         x_np = np.squeeze(x.data.numpy())
-
+        mu_init = torch.ones(1, n_components, d) - .2
         var_init = torch.ones(1, n_components, d) - .4
 
-        model = GaussianMixture(n_components, d, var_init=var_init, covariance_type="diag")
+        model = GaussianMixture(n_components, d, mu_init=mu_init, var_init=var_init, covariance_type="diag")
         model_sk = sklearn.mixture.GaussianMixture(n_components,
             covariance_type="diag",
             init_params="random",
             means_init=np.squeeze(model.mu.data.numpy()),
-            precisions_init=np.squeeze(1. / np.sqrt(var_init.data.numpy())))
+            precisions_init=np.squeeze(1. / np.sqrt(var_init.data.numpy())),
+            weights_init=np.squeeze(model.pi.data.numpy()))
 
         model_sk._initialize_parameters(x_np, np.random.RandomState())
+
         log_prob_sk = model_sk._estimate_log_prob(x_np)
         log_prob = model._estimate_log_prob(x)
 
@@ -80,13 +82,14 @@ class CpuCheck(unittest.TestCase):
             log_resp_sk,
             decimal=0,
             verbose=True)
-
-        model_sk._m_step(x_np, log_prob_sk)
+        
+        # Compute pi weight var update in sk, then compare against gmm
+        model_sk._m_step(x_np, log_resp_sk)
         pi_sk = model_sk.weights_
         mu_sk = model_sk.means_
-        var_sk = model_sk.means_
+        var_sk = model_sk.covariances_
 
-        pi, mu, var = model._m_step(x, log_prob)
+        pi, mu, var = model._m_step(x, log_resp)
 
         # Test whether pi ..
         np.testing.assert_almost_equal(np.squeeze(pi.data.numpy()),
@@ -114,7 +117,7 @@ class CpuCheck(unittest.TestCase):
         n_components = np.random.randint(1, 100)
 
         # (n, k, d)
-        x = torch.randn(400, 1, d)
+        x = torch.randn(400, 1, d).double()
         # (n, d)
         x_np = np.squeeze(x.data.numpy())
 
