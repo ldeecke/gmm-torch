@@ -2,7 +2,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
-sns.set(style="white", font="Arial")
+sns.set(style="white")
 colors = sns.color_palette("Paired", n_colors=12).as_hex()
 
 import numpy as np
